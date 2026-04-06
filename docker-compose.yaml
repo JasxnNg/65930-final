@@ -35,6 +35,6 @@ services:
     volumes:
       - ./:/home/workspace
     environment:
-      - USER_UID=${USER_UID:-501}
-      - USER_GID=${USER_GID:-20}
+      - USER_UID=${USER_UID:-502}
+      - USER_GID=${USER_GID:-502}
       - JUPYTER_SWITCHES=--NotebookApp.token=''
