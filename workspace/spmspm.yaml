@@ -1,0 +1,12 @@
+workload:
+  iteration_space_shape:
+    m: 0 <= m < 2
+    n: 0 <= n < 2
+    k: 0 <= k < 2
+  bits_per_value: {All: 8}
+  einsums:
+    - name: SpMSpM
+      tensor_accesses:
+        - {name: A, projection: [m, k]}
+        - {name: B, projection: [n, k]}
+        - {name: Z, projection: [m, n], output: True}
