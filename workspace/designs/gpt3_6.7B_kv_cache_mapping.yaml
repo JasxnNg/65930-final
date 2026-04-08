@@ -1,0 +1,306 @@
+# Hand-authored no-fusion mapping for the official GPT-3 6.7B KV-cache workload.
+# This mirrors the workload order explicitly instead of relying on the automatic mapper.
+#
+# Intended pairing:
+#   arch: workspace/designs/arch.yaml
+#   workload: workspace/designs/gpt3_6.7B_kv_cache.yaml
+#
+# Design choices:
+# - All tensors are backed by MainMemory.
+# - Einsums execute sequentially in workload order.
+# - Each einsum is tiled down to tile_shape: 1 at the mapped levels so that
+#   GlobalBuffer / LocalBuffer / Register footprints stay small and predictable.
+# - MAC is used for 3-tensor einsums; ScalarUnit is used for copy / unary einsums.
+
+mapping:
+  nodes:
+  - !Storage
+    component: MainMemory
+    tensors: [I_in, K, V]
+  - !Storage
+    component: MainMemory
+    tensors: [WV, WK, WQ, WZ, WFFA, WFFB]
+  - !Storage
+    component: MainMemory
+    tensors: [I, V_new, K_new, Q_new, QK, QK_softmax, AV, Z, FFA, FFB]
+
+  - !Sequential
+    nodes:
+    - !Nested
+      nodes:
+      - !Temporal
+        rank_variable: b
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m
+        tile_shape: 1
+      - !Temporal
+        rank_variable: d
+        tile_shape: 1
+      - !Storage
+        component: GlobalBuffer
+        tensors: [I_in, I]
+      - !Storage
+        component: LocalBuffer
+        tensors: [I_in, I]
+      - !Compute
+        einsum: I
+        component: ScalarUnit
+
+    - !Nested
+      nodes:
+      - !Temporal
+        rank_variable: b
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m
+        tile_shape: 1
+      - !Temporal
+        rank_variable: h
+        tile_shape: 1
+      - !Temporal
+        rank_variable: e
+        tile_shape: 1
+      - !Storage
+        component: GlobalBuffer
+        tensors: [I, WV, V_new]
+      - !Storage
+        component: LocalBuffer
+        tensors: [I, V_new]
+      - !Temporal
+        rank_variable: d
+        tile_shape: 1
+      - !Storage
+        component: Register
+        tensors: [WV]
+      - !Compute
+        einsum: V_new
+        component: MAC
+
+    - !Nested
+      nodes:
+      - !Temporal
+        rank_variable: b
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m
+        tile_shape: 1
+      - !Temporal
+        rank_variable: h
+        tile_shape: 1
+      - !Temporal
+        rank_variable: e
+        tile_shape: 1
+      - !Storage
+        component: GlobalBuffer
+        tensors: [I, WK, K_new]
+      - !Storage
+        component: LocalBuffer
+        tensors: [I, K_new]
+      - !Temporal
+        rank_variable: d
+        tile_shape: 1
+      - !Storage
+        component: Register
+        tensors: [WK]
+      - !Compute
+        einsum: K_new
+        component: MAC
+
+    - !Nested
+      nodes:
+      - !Temporal
+        rank_variable: b
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m
+        tile_shape: 1
+      - !Temporal
+        rank_variable: h
+        tile_shape: 1
+      - !Temporal
+        rank_variable: e
+        tile_shape: 1
+      - !Storage
+        component: GlobalBuffer
+        tensors: [I, WQ, Q_new]
+      - !Storage
+        component: LocalBuffer
+        tensors: [I, Q_new]
+      - !Temporal
+        rank_variable: d
+        tile_shape: 1
+      - !Storage
+        component: Register
+        tensors: [WQ]
+      - !Compute
+        einsum: Q_new
+        component: MAC
+
+    - !Nested
+      nodes:
+      - !Temporal
+        rank_variable: b
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m_full
+        tile_shape: 1
+      - !Temporal
+        rank_variable: h
+        tile_shape: 1
+      - !Storage
+        component: GlobalBuffer
+        tensors: [Q_new, K, QK]
+      - !Storage
+        component: LocalBuffer
+        tensors: [Q_new, QK]
+      - !Temporal
+        rank_variable: e
+        tile_shape: 1
+      - !Storage
+        component: Register
+        tensors: [K]
+      - !Compute
+        einsum: QK
+        component: MAC
+
+    - !Nested
+      nodes:
+      - !Temporal
+        rank_variable: b
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m_full
+        tile_shape: 1
+      - !Temporal
+        rank_variable: h
+        tile_shape: 1
+      - !Storage
+        component: GlobalBuffer
+        tensors: [QK, QK_softmax]
+      - !Storage
+        component: LocalBuffer
+        tensors: [QK, QK_softmax]
+      - !Compute
+        einsum: QK_softmax
+        component: ScalarUnit
+
+    - !Nested
+      nodes:
+      - !Temporal
+        rank_variable: b
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m
+        tile_shape: 1
+      - !Temporal
+        rank_variable: h
+        tile_shape: 1
+      - !Temporal
+        rank_variable: f
+        tile_shape: 1
+      - !Storage
+        component: GlobalBuffer
+        tensors: [QK_softmax, V, AV]
+      - !Storage
+        component: LocalBuffer
+        tensors: [QK_softmax, AV]
+      - !Temporal
+        rank_variable: m_full
+        tile_shape: 1
+      - !Storage
+        component: Register
+        tensors: [V]
+      - !Compute
+        einsum: AV
+        component: MAC
+
+    - !Nested
+      nodes:
+      - !Temporal
+        rank_variable: b
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m
+        tile_shape: 1
+      - !Temporal
+        rank_variable: g
+        tile_shape: 1
+      - !Storage
+        component: GlobalBuffer
+        tensors: [AV, WZ, Z]
+      - !Storage
+        component: LocalBuffer
+        tensors: [AV, Z]
+      - !Temporal
+        rank_variable: h
+        tile_shape: 1
+      - !Temporal
+        rank_variable: f
+        tile_shape: 1
+      - !Storage
+        component: Register
+        tensors: [WZ]
+      - !Compute
+        einsum: Z
+        component: MAC
+
+    - !Nested
+      nodes:
+      - !Temporal
+        rank_variable: b
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m
+        tile_shape: 1
+      - !Temporal
+        rank_variable: c
+        tile_shape: 1
+      - !Storage
+        component: GlobalBuffer
+        tensors: [Z, WFFA, FFA]
+      - !Storage
+        component: LocalBuffer
+        tensors: [Z, FFA]
+      - !Temporal
+        rank_variable: g
+        tile_shape: 1
+      - !Storage
+        component: Register
+        tensors: [WFFA]
+      - !Compute
+        einsum: FFA
+        component: MAC
+
+    - !Nested
+      nodes:
+      - !Temporal
+        rank_variable: b
+        tile_shape: 1
+      - !Temporal
+        rank_variable: m
+        tile_shape: 1
+      - !Temporal
+        rank_variable: j
+        tile_shape: 1
+      - !Storage
+        component: GlobalBuffer
+        tensors: [FFA, WFFB, FFB]
+      - !Storage
+        component: LocalBuffer
+        tensors: [FFA, FFB]
+      - !Temporal
+        rank_variable: c
+        tile_shape: 1
+      - !Storage
+        component: Register
+        tensors: [WFFB]
+      - !Compute
+        einsum: FFB
+        component: MAC
