@@ -1,0 +1,448 @@
+workload:
+  rank_sizes:
+    {% set BATCH_SIZE = BATCH_SIZE | default(1) %}
+    {% set CONTEXT_TOKENS = CONTEXT_TOKENS | default(8192) %}
+    {% set VOCAB_SIZE = VOCAB_SIZE | default(50257) %}
+
+    B: {{BATCH_SIZE}}
+
+    # Initial context length before this speculative round
+    P0: {{CONTEXT_TOKENS}}
+    P1: {{CONTEXT_TOKENS + 1}}
+    P2: {{CONTEXT_TOKENS + 2}}
+    P3: {{CONTEXT_TOKENS + 3}}
+
+    # 3 single-token decode steps, then 3-token verify block
+    M1: 1
+    M2: 1
+    M3: 1
+    MV: 3
+
+    # Model dims: override per model
+    H: {{NUM_HEADS}}
+    E: 128
+    F: 128
+    D: {{MODEL_DIM}}
+    C: {{FFN_DIM}}
+    J: {{MODEL_DIM}}
+    G: {{MODEL_DIM}}
+    S: {{VOCAB_SIZE}}
+
+  bits_per_value:
+    All: 8
+    sampled_tok1_onehot: 1
+    sampled_tok2_onehot: 1
+    sampled_tok3_onehot: 1
+
+  persistent_tensors: weight - Intermediates
+
+  einsums:
+  # ============================================================
+  # Decode step 1: consume token embedding I1_in, attend over K/V cache0
+  # ============================================================
+  - name: D1_I
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: I1_in, projection: [b, m1, d]}
+      - {name: D1_I, projection: [b, m1, d], output: True}
+    renames: {weight: Nothing, input: Inputs, output: Outputs}
+
+  - name: D1_V_new
+    tensor_accesses:
+      - {name: D1_I, projection: [b, m1, d]}
+      - {name: WV, projection: [h, e, d], persistent: True}
+      - {name: D1_V_new, projection: [b, m1, h, e], output: True}
+
+  - name: D1_K_new
+    tensor_accesses:
+      - {name: D1_I, projection: [b, m1, d]}
+      - {name: WK, projection: [h, e, d], persistent: True}
+      - {name: D1_K_new, projection: [b, m1, h, e], output: True}
+
+  - name: D1_Q_new
+    tensor_accesses:
+      - {name: D1_I, projection: [b, m1, d]}
+      - {name: WQ, projection: [h, e, d], persistent: True}
+      - {name: D1_Q_new, projection: [b, m1, h, e], output: True}
+
+  - name: D1_QK
+    tensor_accesses:
+      - {name: D1_Q_new, projection: [b, m1, h, e]}
+      - {name: K_cache0, projection: {B: b, P0: p, H: h, E: e}}
+      - {name: D1_QK, projection: [b, m1, p, h], output: True}
+    renames: {input: D1_Q_new, weight: K_cache0, output: D1_QK}
+
+  - name: D1_QK_softmax
+    tensor_accesses:
+      - {name: D1_QK, projection: [b, m1, p, h]}
+      - {name: D1_QK_softmax, projection: [b, m1, p, h], output: True}
+
+  - name: D1_AV
+    tensor_accesses:
+      - {name: D1_QK_softmax, projection: [b, m1, p, h]}
+      - {name: V_cache0, projection: {B: b, P0: p, H: h, E: f}}
+      - {name: D1_AV, projection: [b, m1, h, f], output: True}
+    renames: {input: D1_QK_softmax, weight: V_cache0}
+
+  - name: D1_Z
+    tensor_accesses:
+      - {name: D1_AV, projection: [b, m1, h, f]}
+      - {name: WZ, projection: [h, f, g], persistent: True}
+      - {name: D1_Z, projection: [b, m1, g], output: True}
+
+  - name: D1_FFA
+    tensor_accesses:
+      - {name: D1_Z, projection: [b, m1, g]}
+      - {name: WFFA, projection: [g, c], persistent: True}
+      - {name: D1_FFA, projection: [b, m1, c], output: True}
+
+  - name: D1_FFB
+    tensor_accesses:
+      - {name: D1_FFA, projection: [b, m1, c]}
+      - {name: WFFB, projection: [c, j], persistent: True}
+      - {name: D1_H, projection: [b, m1, j], output: True}
+
+  # LM head for token selection
+  - name: D1_LOGITS
+    tensor_accesses:
+      - {name: D1_H, projection: [b, m1, d]}
+      - {name: W_vocab, projection: [s, d], persistent: True}
+      - {name: D1_logits, projection: [b, m1, s], output: True}
+
+  # Sampled token is supplied externally as one-hot.
+  # This is the closest faithful model inside static YAML.
+  - name: D1_sampled_tok
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: sampled_tok1_onehot_in, projection: [b, s]}
+      - {name: sampled_tok1_onehot, projection: [b, s], output: True}
+    renames: {weight: Nothing, input: Inputs, output: Outputs}
+
+  # Embed sampled token for decode step 2 input
+  - name: D2_embed_in
+    tensor_accesses:
+      - {name: sampled_tok1_onehot, projection: [b, s]}
+      - {name: W_embed, projection: [s, d], persistent: True}
+      - {name: I2_in, projection: [b, m2, d], output: True}
+
+  # Update cache: K_cache1 = [K_cache0 ; D1_K_new], same for V
+  - name: Copy_K0_to_K1
+    is_copy_operation: True
+    iteration_space_shape: ["0 <= p < P0"]
+    tensor_accesses:
+      - {name: K_cache0, projection: {B: b, P0: p, H: h, E: e}}
+      - {name: K_cache1, projection: {B: b, P1: p, H: h, E: e}, output: True}
+
+  - name: Append_D1_K_to_K1
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: D1_K_new, projection: [b, m1, h, e]}
+      - {name: K_cache1, projection: {B: b, P1: P0 + m1, H: h, E: e}, output: True}
+
+  - name: Copy_V0_to_V1
+    is_copy_operation: True
+    iteration_space_shape: ["0 <= p < P0"]
+    tensor_accesses:
+      - {name: V_cache0, projection: {B: b, P0: p, H: h, E: e}}
+      - {name: V_cache1, projection: {B: b, P1: p, H: h, E: e}, output: True}
+
+  - name: Append_D1_V_to_V1
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: D1_V_new, projection: [b, m1, h, e]}
+      - {name: V_cache1, projection: {B: b, P1: P0 + m1, H: h, E: e}, output: True}
+
+  # ============================================================
+  # Decode step 2: consume I2_in, attend over cache1
+  # ============================================================
+  - name: D2_I
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: I2_in, projection: [b, m2, d]}
+      - {name: D2_I, projection: [b, m2, d], output: True}
+
+  - name: D2_V_new
+    tensor_accesses:
+      - {name: D2_I, projection: [b, m2, d]}
+      - {name: WV, projection: [h, e, d], persistent: True}
+      - {name: D2_V_new, projection: [b, m2, h, e], output: True}
+
+  - name: D2_K_new
+    tensor_accesses:
+      - {name: D2_I, projection: [b, m2, d]}
+      - {name: WK, projection: [h, e, d], persistent: True}
+      - {name: D2_K_new, projection: [b, m2, h, e], output: True}
+
+  - name: D2_Q_new
+    tensor_accesses:
+      - {name: D2_I, projection: [b, m2, d]}
+      - {name: WQ, projection: [h, e, d], persistent: True}
+      - {name: D2_Q_new, projection: [b, m2, h, e], output: True}
+
+  - name: D2_QK
+    tensor_accesses:
+      - {name: D2_Q_new, projection: [b, m2, h, e]}
+      - {name: K_cache1, projection: {B: b, P1: p, H: h, E: e}}
+      - {name: D2_QK, projection: [b, m2, p, h], output: True}
+    renames: {input: D2_Q_new, weight: K_cache1, output: D2_QK}
+
+  - name: D2_QK_softmax
+    tensor_accesses:
+      - {name: D2_QK, projection: [b, m2, p, h]}
+      - {name: D2_QK_softmax, projection: [b, m2, p, h], output: True}
+
+  - name: D2_AV
+    tensor_accesses:
+      - {name: D2_QK_softmax, projection: [b, m2, p, h]}
+      - {name: V_cache1, projection: {B: b, P1: p, H: h, E: f}}
+      - {name: D2_AV, projection: [b, m2, h, f], output: True}
+    renames: {input: D2_QK_softmax, weight: V_cache1}
+
+  - name: D2_Z
+    tensor_accesses:
+      - {name: D2_AV, projection: [b, m2, h, f]}
+      - {name: WZ, projection: [h, f, g], persistent: True}
+      - {name: D2_Z, projection: [b, m2, g], output: True}
+
+  - name: D2_FFA
+    tensor_accesses:
+      - {name: D2_Z, projection: [b, m2, g]}
+      - {name: WFFA, projection: [g, c], persistent: True}
+      - {name: D2_FFA, projection: [b, m2, c], output: True}
+
+  - name: D2_FFB
+    tensor_accesses:
+      - {name: D2_FFA, projection: [b, m2, c]}
+      - {name: WFFB, projection: [c, j], persistent: True}
+      - {name: D2_H, projection: [b, m2, j], output: True}
+
+  - name: D2_LOGITS
+    tensor_accesses:
+      - {name: D2_H, projection: [b, m2, d]}
+      - {name: W_vocab, projection: [s, d], persistent: True}
+      - {name: D2_logits, projection: [b, m2, s], output: True}
+
+  - name: D2_sampled_tok
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: sampled_tok2_onehot_in, projection: [b, s]}
+      - {name: sampled_tok2_onehot, projection: [b, s], output: True}
+
+  - name: D3_embed_in
+    tensor_accesses:
+      - {name: sampled_tok2_onehot, projection: [b, s]}
+      - {name: W_embed, projection: [s, d], persistent: True}
+      - {name: I3_in, projection: [b, m3, d], output: True}
+
+  - name: Copy_K1_to_K2
+    is_copy_operation: True
+    iteration_space_shape: ["0 <= p < P1"]
+    tensor_accesses:
+      - {name: K_cache1, projection: {B: b, P1: p, H: h, E: e}}
+      - {name: K_cache2, projection: {B: b, P2: p, H: h, E: e}, output: True}
+
+  - name: Append_D2_K_to_K2
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: D2_K_new, projection: [b, m2, h, e]}
+      - {name: K_cache2, projection: {B: b, P2: P1 + m2, H: h, E: e}, output: True}
+
+  - name: Copy_V1_to_V2
+    is_copy_operation: True
+    iteration_space_shape: ["0 <= p < P1"]
+    tensor_accesses:
+      - {name: V_cache1, projection: {B: b, P1: p, H: h, E: e}}
+      - {name: V_cache2, projection: {B: b, P2: p, H: h, E: e}, output: True}
+
+  - name: Append_D2_V_to_V2
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: D2_V_new, projection: [b, m2, h, e]}
+      - {name: V_cache2, projection: {B: b, P2: P1 + m2, H: h, E: e}, output: True}
+
+  # ============================================================
+  # Decode step 3: consume I3_in, attend over cache2
+  # ============================================================
+  - name: D3_I
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: I3_in, projection: [b, m3, d]}
+      - {name: D3_I, projection: [b, m3, d], output: True}
+
+  - name: D3_V_new
+    tensor_accesses:
+      - {name: D3_I, projection: [b, m3, d]}
+      - {name: WV, projection: [h, e, d], persistent: True}
+      - {name: D3_V_new, projection: [b, m3, h, e], output: True}
+
+  - name: D3_K_new
+    tensor_accesses:
+      - {name: D3_I, projection: [b, m3, d]}
+      - {name: WK, projection: [h, e, d], persistent: True}
+      - {name: D3_K_new, projection: [b, m3, h, e], output: True}
+
+  - name: D3_Q_new
+    tensor_accesses:
+      - {name: D3_I, projection: [b, m3, d]}
+      - {name: WQ, projection: [h, e, d], persistent: True}
+      - {name: D3_Q_new, projection: [b, m3, h, e], output: True}
+
+  - name: D3_QK
+    tensor_accesses:
+      - {name: D3_Q_new, projection: [b, m3, h, e]}
+      - {name: K_cache2, projection: {B: b, P2: p, H: h, E: e}}
+      - {name: D3_QK, projection: [b, m3, p, h], output: True}
+    renames: {input: D3_Q_new, weight: K_cache2, output: D3_QK}
+
+  - name: D3_QK_softmax
+    tensor_accesses:
+      - {name: D3_QK, projection: [b, m3, p, h]}
+      - {name: D3_QK_softmax, projection: [b, m3, p, h], output: True}
+
+  - name: D3_AV
+    tensor_accesses:
+      - {name: D3_QK_softmax, projection: [b, m3, p, h]}
+      - {name: V_cache2, projection: {B: b, P2: p, H: h, E: f}}
+      - {name: D3_AV, projection: [b, m3, h, f], output: True}
+    renames: {input: D3_QK_softmax, weight: V_cache2}
+
+  - name: D3_Z
+    tensor_accesses:
+      - {name: D3_AV, projection: [b, m3, h, f]}
+      - {name: WZ, projection: [h, f, g], persistent: True}
+      - {name: D3_Z, projection: [b, m3, g], output: True}
+
+  - name: D3_FFA
+    tensor_accesses:
+      - {name: D3_Z, projection: [b, m3, g]}
+      - {name: WFFA, projection: [g, c], persistent: True}
+      - {name: D3_FFA, projection: [b, m3, c], output: True}
+
+  - name: D3_FFB
+    tensor_accesses:
+      - {name: D3_FFA, projection: [b, m3, c]}
+      - {name: WFFB, projection: [c, j], persistent: True}
+      - {name: D3_H, projection: [b, m3, j], output: True}
+
+  - name: D3_LOGITS
+    tensor_accesses:
+      - {name: D3_H, projection: [b, m3, d]}
+      - {name: W_vocab, projection: [s, d], persistent: True}
+      - {name: D3_logits, projection: [b, m3, s], output: True}
+
+  - name: D3_sampled_tok
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: sampled_tok3_onehot_in, projection: [b, s]}
+      - {name: sampled_tok3_onehot, projection: [b, s], output: True}
+
+  - name: Copy_K2_to_K3
+    is_copy_operation: True
+    iteration_space_shape: ["0 <= p < P2"]
+    tensor_accesses:
+      - {name: K_cache2, projection: {B: b, P2: p, H: h, E: e}}
+      - {name: K_cache3, projection: {B: b, P3: p, H: h, E: e}, output: True}
+
+  - name: Append_D3_K_to_K3
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: D3_K_new, projection: [b, m3, h, e]}
+      - {name: K_cache3, projection: {B: b, P3: P2 + m3, H: h, E: e}, output: True}
+
+  - name: Copy_V2_to_V3
+    is_copy_operation: True
+    iteration_space_shape: ["0 <= p < P2"]
+    tensor_accesses:
+      - {name: V_cache2, projection: {B: b, P2: p, H: h, E: e}}
+      - {name: V_cache3, projection: {B: b, P3: p, H: h, E: e}, output: True}
+
+  - name: Append_D3_V_to_V3
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: D3_V_new, projection: [b, m3, h, e]}
+      - {name: V_cache3, projection: {B: b, P3: P2 + m3, H: h, E: e}, output: True}
+
+  # ============================================================
+  # Verify step: verify the 3 drafted tokens against the ORIGINAL cache0
+  # (minimum-change speculative verify model)
+  # ============================================================
+  - name: V_I
+    is_copy_operation: True
+    tensor_accesses:
+      - {name: V_in, projection: [b, mv, d]}
+      - {name: V_I, projection: [b, mv, d], output: True}
+
+  - name: V_V_new
+    tensor_accesses:
+      - {name: V_I, projection: [b, mv, d]}
+      - {name: WV, projection: [h, e, d], persistent: True}
+      - {name: V_V_new, projection: [b, mv, h, e], output: True}
+
+  - name: V_K_new
+    tensor_accesses:
+      - {name: V_I, projection: [b, mv, d]}
+      - {name: WK, projection: [h, e, d], persistent: True}
+      - {name: V_K_new, projection: [b, mv, h, e], output: True}
+
+  - name: V_Q_new
+    tensor_accesses:
+      - {name: V_I, projection: [b, mv, d]}
+      - {name: WQ, projection: [h, e, d], persistent: True}
+      - {name: V_Q_new, projection: [b, mv, h, e], output: True}
+
+  - name: V_QK
+    tensor_accesses:
+      - {name: V_Q_new, projection: [b, mv, h, e]}
+      - {name: K_cache0, projection: {B: b, P0: p, H: h, E: e}}
+      - {name: V_QK, projection: [b, mv, p, h], output: True}
+    renames: {input: V_Q_new, weight: K_cache0, output: V_QK}
+
+  - name: V_QK_softmax
+    tensor_accesses:
+      - {name: V_QK, projection: [b, mv, p, h]}
+      - {name: V_QK_softmax, projection: [b, mv, p, h], output: True}
+
+  - name: V_AV
+    tensor_accesses:
+      - {name: V_QK_softmax, projection: [b, mv, p, h]}
+      - {name: V_cache0, projection: {B: b, P0: p, H: h, E: f}}
+      - {name: V_AV, projection: [b, mv, h, f], output: True}
+    renames: {input: V_QK_softmax, weight: V_cache0}
+
+  - name: V_Z
+    tensor_accesses:
+      - {name: V_AV, projection: [b, mv, h, f]}
+      - {name: WZ, projection: [h, f, g], persistent: True}
+      - {name: V_Z, projection: [b, mv, g], output: True}
+
+  - name: V_FFA
+    tensor_accesses:
+      - {name: V_Z, projection: [b, mv, g]}
+      - {name: WFFA, projection: [g, c], persistent: True}
+      - {name: V_FFA, projection: [b, mv, c], output: True}
+
+  - name: V_FFB
+    tensor_accesses:
+      - {name: V_FFA, projection: [b, mv, c]}
+      - {name: WFFB, projection: [c, j], persistent: True}
+      - {name: V_H, projection: [b, mv, j], output: True}
+
+  - name: V_LOGITS
+    tensor_accesses:
+      - {name: V_H, projection: [b, mv, d]}
+      - {name: W_vocab, projection: [s, d], persistent: True}
+      - {name: V_logits, projection: [b, mv, s], output: True}
+
+renames:
+  einsums:
+  - name: default
+    tensor_accesses:
+    - name: input
+      source: Inputs & Intermediates if len(All) == 3 else Inputs
+      expected_count: 1
+    - name: output
+      source: Outputs
+      expected_count: 1
+    - name: weight
+      source: ~(input | output)
+      expected_count: 1 if len(All) == 3 else 0
