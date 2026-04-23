@@ -1,0 +1,11 @@
+einsum,component,mapping_path
+I,ScalarUnit,"root[2] -> (Sequential) -> (Nested) -> (Compute, einsum=I, component=ScalarUnit)"
+V_new,MAC,"root[2] -> (Sequential) -> (Nested) -> (Compute, einsum=V_new, component=MAC)"
+K_new,MAC,"root[2] -> (Sequential) -> (Nested) -> (Compute, einsum=K_new, component=MAC)"
+Q_new,MAC,"root[2] -> (Sequential) -> (Nested) -> (Compute, einsum=Q_new, component=MAC)"
+QK,MAC,"root[2] -> (Sequential) -> (Nested) -> (Compute, einsum=QK, component=MAC)"
+QK_softmax,ScalarUnit,"root[2] -> (Sequential) -> (Nested) -> (Compute, einsum=QK_softmax, component=ScalarUnit)"
+AV,MAC,"root[2] -> (Sequential) -> (Nested) -> (Compute, einsum=AV, component=MAC)"
+Z,MAC,"root[2] -> (Sequential) -> (Nested) -> (Compute, einsum=Z, component=MAC)"
+FFA,MAC,"root[2] -> (Sequential) -> (Nested) -> (Compute, einsum=FFA, component=MAC)"
+FFB,MAC,"root[2] -> (Sequential) -> (Nested) -> (Compute, einsum=FFB, component=MAC)"

@@ -1,0 +1,2 @@
+component,total_ops_macs,total_read_write_values,total_bytes_at_8bit,matmul_count,comp_intensity_macs_per_value,comp_intensity_macs_per_byte
+MAC,5445476352,1815971520,1815971520.0,8,2.998657353392855,2.998657353392855

@@ -1,0 +1,963 @@
+note: Readable summary for analysis only; this is not guaranteed to be an AccelForge-loadable YAML mapping.
+source_pickle: saved_mappings/spec_target_ctx128_gamma3.pkl
+root_type: Mapping
+nodes:
+- type: Storage
+  tensors:
+  - WV
+  - WK
+  - WQ
+  - K
+  - V
+  - WZ
+  - WFFA
+  - WFFB
+  - I
+  - Q_new
+  - QK
+  - QK_softmax
+  - AV
+  - Z
+  - FFA
+  component: MainMemory
+  persistent: true
+- type: Reservation
+  persistent: true
+  resource: MainMemory
+  purposes:
+  - WV
+  - WK
+  - WQ
+  - K
+  - V
+  - WZ
+  - WFFA
+  - WFFB
+- type: Sequential
+  nodes:
+  - type: Nested
+    nodes:
+    - type: Storage
+      tensors:
+      - I_in
+      component: MainMemory
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: MainMemory
+      purposes:
+      - I_in
+      - I
+    - type: Temporal
+      rank_variable: d
+      tile_shape: 4
+      initial_tile_shape: null
+    - type: Temporal
+      rank_variable: m
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Spatial
+      component: LocalBuffer
+      rank_variable: d
+      tile_shape: 1
+      initial_tile_shape: null
+      name: Z
+    - type: Compute
+      component: ScalarUnit
+      einsum: I
+  - type: Nested
+    nodes:
+    - type: Storage
+      tensors:
+      - V_new
+      component: MainMemory
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: MainMemory
+      purposes:
+      - V_new
+      - I
+    - type: Temporal
+      rank_variable: e
+      tile_shape: 16
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - V_new
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - V_new
+    - type: Temporal
+      rank_variable: d
+      tile_shape: 1536
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - WV
+      - I
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - WV
+      - I
+    - type: Temporal
+      rank_variable: e
+      tile_shape: 4
+      initial_tile_shape: null
+    - type: Spatial
+      component: LocalBuffer
+      rank_variable: d
+      tile_shape: 384
+      initial_tile_shape: null
+      name: Z
+    - type: Storage
+      tensors:
+      - V_new
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - V_new
+    - type: Temporal
+      rank_variable: d
+      tile_shape: 128
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - I
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - I
+    - type: Temporal
+      rank_variable: h
+      tile_shape: 32
+      initial_tile_shape: null
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: d
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_output
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: h
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_input
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: e
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_input
+    - type: Storage
+      tensors:
+      - WV
+      component: Register
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: Register
+      purposes:
+      - WV
+    - type: Temporal
+      rank_variable: m
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Compute
+      component: MAC
+      einsum: V_new
+  - type: Nested
+    nodes:
+    - type: Storage
+      tensors:
+      - K_new
+      component: MainMemory
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: MainMemory
+      purposes:
+      - K_new
+      - I
+    - type: Temporal
+      rank_variable: e
+      tile_shape: 16
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - K_new
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - K_new
+    - type: Temporal
+      rank_variable: d
+      tile_shape: 1536
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - WK
+      - I
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - WK
+      - I
+    - type: Temporal
+      rank_variable: e
+      tile_shape: 4
+      initial_tile_shape: null
+    - type: Spatial
+      component: LocalBuffer
+      rank_variable: d
+      tile_shape: 384
+      initial_tile_shape: null
+      name: Z
+    - type: Storage
+      tensors:
+      - K_new
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - K_new
+    - type: Temporal
+      rank_variable: d
+      tile_shape: 128
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - I
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - I
+    - type: Temporal
+      rank_variable: h
+      tile_shape: 32
+      initial_tile_shape: null
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: d
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_output
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: h
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_input
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: e
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_input
+    - type: Storage
+      tensors:
+      - WK
+      component: Register
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: Register
+      purposes:
+      - WK
+    - type: Temporal
+      rank_variable: m
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Compute
+      component: MAC
+      einsum: K_new
+  - type: Nested
+    nodes:
+    - type: Reservation
+      persistent: false
+      resource: MainMemory
+      purposes:
+      - Q_new
+      - I
+    - type: Temporal
+      rank_variable: e
+      tile_shape: 16
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - Q_new
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - Q_new
+    - type: Temporal
+      rank_variable: d
+      tile_shape: 1536
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - WQ
+      - I
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - WQ
+      - I
+    - type: Temporal
+      rank_variable: e
+      tile_shape: 4
+      initial_tile_shape: null
+    - type: Spatial
+      component: LocalBuffer
+      rank_variable: d
+      tile_shape: 384
+      initial_tile_shape: null
+      name: Z
+    - type: Storage
+      tensors:
+      - Q_new
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - Q_new
+    - type: Temporal
+      rank_variable: d
+      tile_shape: 128
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - I
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - I
+    - type: Temporal
+      rank_variable: h
+      tile_shape: 32
+      initial_tile_shape: null
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: d
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_output
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: h
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_input
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: e
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_input
+    - type: Storage
+      tensors:
+      - WQ
+      component: Register
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: Register
+      purposes:
+      - WQ
+    - type: Temporal
+      rank_variable: m
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Compute
+      component: MAC
+      einsum: Q_new
+  - type: Nested
+    nodes:
+    - type: Reservation
+      persistent: false
+      resource: MainMemory
+      purposes:
+      - Q_new
+      - QK
+    - type: Temporal
+      rank_variable: h
+      tile_shape: 4
+      initial_tile_shape: null
+    - type: Temporal
+      rank_variable: m_full
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - K
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - K
+    - type: Temporal
+      rank_variable: m
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - QK
+      - Q_new
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - QK
+      - Q_new
+    - type: Spatial
+      component: LocalBuffer
+      rank_variable: h
+      tile_shape: 1
+      initial_tile_shape: null
+      name: Z
+    - type: Storage
+      tensors:
+      - QK
+      - Q_new
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - QK
+      - Q_new
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: e
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_output
+    - type: Storage
+      tensors:
+      - K
+      component: Register
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: Register
+      purposes:
+      - K
+    - type: Compute
+      component: MAC
+      einsum: QK
+  - type: Nested
+    nodes:
+    - type: Reservation
+      persistent: false
+      resource: MainMemory
+      purposes:
+      - QK_softmax
+      - QK
+    - type: Temporal
+      rank_variable: h
+      tile_shape: 4
+      initial_tile_shape: null
+    - type: Temporal
+      rank_variable: m
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Temporal
+      rank_variable: m_full
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - QK
+      - QK_softmax
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - QK
+      - QK_softmax
+    - type: Spatial
+      component: LocalBuffer
+      rank_variable: h
+      tile_shape: 1
+      initial_tile_shape: null
+      name: Z
+    - type: Storage
+      tensors:
+      - QK
+      - QK_softmax
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - QK
+      - QK_softmax
+    - type: Compute
+      component: ScalarUnit
+      einsum: QK_softmax
+  - type: Nested
+    nodes:
+    - type: Reservation
+      persistent: false
+      resource: MainMemory
+      purposes:
+      - QK_softmax
+      - AV
+    - type: Temporal
+      rank_variable: h
+      tile_shape: 4
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - AV
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - AV
+    - type: Temporal
+      rank_variable: m_full
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - QK_softmax
+      - V
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - QK_softmax
+      - V
+    - type: Temporal
+      rank_variable: m
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Spatial
+      component: LocalBuffer
+      rank_variable: h
+      tile_shape: 1
+      initial_tile_shape: null
+      name: Z
+    - type: Storage
+      tensors:
+      - AV
+      - QK_softmax
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - AV
+      - QK_softmax
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: f
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_input
+    - type: Storage
+      tensors:
+      - V
+      component: Register
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: Register
+      purposes:
+      - V
+    - type: Compute
+      component: MAC
+      einsum: AV
+  - type: Nested
+    nodes:
+    - type: Reservation
+      persistent: false
+      resource: MainMemory
+      purposes:
+      - Z
+      - AV
+    - type: Temporal
+      rank_variable: f
+      tile_shape: 32
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - AV
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - AV
+    - type: Temporal
+      rank_variable: g
+      tile_shape: 1536
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - WZ
+      - Z
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - WZ
+      - Z
+    - type: Temporal
+      rank_variable: f
+      tile_shape: 4
+      initial_tile_shape: null
+    - type: Spatial
+      component: LocalBuffer
+      rank_variable: g
+      tile_shape: 384
+      initial_tile_shape: null
+      name: Z
+    - type: Storage
+      tensors:
+      - AV
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - AV
+    - type: Temporal
+      rank_variable: g
+      tile_shape: 128
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - Z
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - Z
+    - type: Temporal
+      rank_variable: h
+      tile_shape: 32
+      initial_tile_shape: null
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: h
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_output
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: f
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_output
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: g
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_input
+    - type: Storage
+      tensors:
+      - WZ
+      component: Register
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: Register
+      purposes:
+      - WZ
+    - type: Temporal
+      rank_variable: m
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Compute
+      component: MAC
+      einsum: Z
+  - type: Nested
+    nodes:
+    - type: Reservation
+      persistent: false
+      resource: MainMemory
+      purposes:
+      - Z
+      - FFA
+    - type: Temporal
+      rank_variable: c
+      tile_shape: 1536
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - FFA
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - FFA
+    - type: Temporal
+      rank_variable: g
+      tile_shape: 1536
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - Z
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - Z
+    - type: Temporal
+      rank_variable: c
+      tile_shape: 384
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - WFFA
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - WFFA
+    - type: Spatial
+      component: LocalBuffer
+      rank_variable: g
+      tile_shape: 384
+      initial_tile_shape: null
+      name: Z
+    - type: Storage
+      tensors:
+      - FFA
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - FFA
+    - type: Temporal
+      rank_variable: g
+      tile_shape: 128
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - Z
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - Z
+    - type: Temporal
+      rank_variable: c
+      tile_shape: 128
+      initial_tile_shape: null
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: g
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_output
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: c
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_input
+    - type: Storage
+      tensors:
+      - WFFA
+      component: Register
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: Register
+      purposes:
+      - WFFA
+    - type: Temporal
+      rank_variable: m
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Compute
+      component: MAC
+      einsum: FFA
+  - type: Nested
+    nodes:
+    - type: Storage
+      tensors:
+      - FFB
+      component: MainMemory
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: MainMemory
+      purposes:
+      - FFB
+      - FFA
+    - type: Temporal
+      rank_variable: c
+      tile_shape: 3072
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - FFA
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - FFA
+    - type: Temporal
+      rank_variable: j
+      tile_shape: 1536
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - FFB
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - FFB
+    - type: Temporal
+      rank_variable: c
+      tile_shape: 384
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - WFFB
+      component: GlobalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: GlobalBuffer
+      purposes:
+      - WFFB
+    - type: Spatial
+      component: LocalBuffer
+      rank_variable: j
+      tile_shape: 384
+      initial_tile_shape: null
+      name: Z
+    - type: Storage
+      tensors:
+      - FFA
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - FFA
+    - type: Temporal
+      rank_variable: j
+      tile_shape: 128
+      initial_tile_shape: null
+    - type: Storage
+      tensors:
+      - FFB
+      component: LocalBuffer
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: LocalBuffer
+      purposes:
+      - FFB
+    - type: Temporal
+      rank_variable: c
+      tile_shape: 128
+      initial_tile_shape: null
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: c
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_output
+    - type: Spatial
+      component: ProcessingElement
+      rank_variable: j
+      tile_shape: 1
+      initial_tile_shape: null
+      name: reuse_input
+    - type: Storage
+      tensors:
+      - WFFB
+      component: Register
+      persistent: false
+    - type: Reservation
+      persistent: false
+      resource: Register
+      purposes:
+      - WFFB
+    - type: Temporal
+      rank_variable: m
+      tile_shape: 1
+      initial_tile_shape: null
+    - type: Compute
+      component: MAC
+      einsum: FFB
