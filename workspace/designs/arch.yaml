@@ -29,7 +29,7 @@ arch:
     actions:
     - {name: read, energy: 1.88e-12, latency: 1 / (8 * 2048e9)}
     - {name: write, energy: 2.36e-12, latency: 1 / (8 * 1024e9)}
-    tensors: {keep: ~MainMemory.tensors, may_keep: All}
+    tensors: {keep: ~MainMemory.tensors, may_keep: All - QK_softmax - Q_new - K}
 
   - !Memory
     name: LocalBuffer
