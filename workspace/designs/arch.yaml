@@ -18,7 +18,7 @@ arch:
       # reference, and they said it left out some things.
     - {name: read, energy: 7.03e-12, latency: 1 / (8 * 614e9)}
     - {name: write, energy: 7.03e-12, latency: 1 / (8 * 614e9)}
-    tensors: {keep: ~Intermediates, may_keep: All}
+    tensors: {keep: ~Intermediates, may_keep: All - QK_softmax - Q_new - K}
 
   - !Memory
     name: GlobalBuffer
@@ -29,7 +29,7 @@ arch:
     actions:
     - {name: read, energy: 1.88e-12, latency: 1 / (8 * 2048e9)}
     - {name: write, energy: 2.36e-12, latency: 1 / (8 * 1024e9)}
-    tensors: {keep: ~MainMemory.tensors, may_keep: All - QK_softmax - Q_new - K}
+    tensors: {keep: ~MainMemory.tensors, may_keep: All}
 
   - !Memory
     name: LocalBuffer
