@@ -1,0 +1,8 @@
+[run.sbatch] node=pax34.sv9.i.etched.com script=experiments/run_generality.py shard=7/11 jobs=48
+[podman_run] node=pax34.sv9.i.etched.com podman_base=/tmp/podman-mihika
+Using 48 parallel jobs
+[generality.shard7.csv] 1/4 {'study': 'scale', 'arch': 'kv_buffer', 'ctx': 512, 'bits': 8, 'draft': 'gpt3_13b', 'target': 'gpt3_175b', 'extra': (), 'meta': {'study': 'scale', 'setting': 'gpt3_13b->gpt3_175b'}}
+[generality.shard7.csv] 2/4 {'study': 'scale', 'arch': 'kv_buffer', 'ctx': 1024, 'bits': 8, 'draft': 'gpt3_13b', 'target': 'gpt3_175b', 'extra': (), 'meta': {'study': 'scale', 'setting': 'gpt3_13b->gpt3_175b'}}
+[generality.shard7.csv] 3/4 {'study': 'scale', 'arch': 'kv_buffer', 'ctx': 2048, 'bits': 8, 'draft': 'gpt3_13b', 'target': 'gpt3_175b', 'extra': (), 'meta': {'study': 'scale', 'setting': 'gpt3_13b->gpt3_175b'}}
+[generality.shard7.csv] 4/4 {'study': 'scale', 'arch': 'kv_buffer', 'ctx': 4096, 'bits': 8, 'draft': 'gpt3_13b', 'target': 'gpt3_175b', 'extra': (), 'meta': {'study': 'scale', 'setting': 'gpt3_13b->gpt3_175b'}}
+[generality.shard7.csv] wrote 320 rows -> results/generality.shard7.csv

@@ -1,0 +1,8 @@
+[run.sbatch] node=pax12.sv9.i.etched.com script=experiments/run_kv_dataflow.py shard=2/16 jobs=48
+[podman_run] node=pax12.sv9.i.etched.com podman_base=/scratch/podman/mihika
+Using 48 parallel jobs
+[kv_dataflow.shard2.csv] 1/4 {'arch': 'kv_split', 'ctx': 512, 'extra': (), 'meta': {'study': 'kv_org', 'setting': 'kv_split'}}
+[kv_dataflow.shard2.csv] 2/4 {'arch': 'kv_split', 'ctx': 1024, 'extra': (), 'meta': {'study': 'kv_org', 'setting': 'kv_split'}}
+[kv_dataflow.shard2.csv] 3/4 {'arch': 'kv_split', 'ctx': 2048, 'extra': (), 'meta': {'study': 'kv_org', 'setting': 'kv_split'}}
+[kv_dataflow.shard2.csv] 4/4 {'arch': 'kv_split', 'ctx': 4096, 'extra': (), 'meta': {'study': 'kv_org', 'setting': 'kv_split'}}
+[kv_dataflow.shard2.csv] wrote 320 rows -> results/kv_dataflow.shard2.csv

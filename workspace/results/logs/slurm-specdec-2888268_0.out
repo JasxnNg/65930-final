@@ -1,0 +1,5 @@
+[run.sbatch] node=pax33.sv9.i.etched.com script=experiments/run_scheduler.py shard=0/8 jobs=48
+[podman_run] node=pax33.sv9.i.etched.com podman_base=/tmp/podman-mihika
+Using 48 parallel jobs
+[scheduler.shard0.csv] 1/1 512
+[scheduler.shard0.csv] wrote 192 rows -> results/scheduler.shard0.csv

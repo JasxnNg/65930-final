@@ -1,0 +1,5 @@
+[run.sbatch] node=pax11.sv9.i.etched.com script=experiments/run_kv_longctx.py shard=0/4 jobs=48
+[podman_run] node=pax11.sv9.i.etched.com podman_base=/scratch/podman/mihika
+Using 48 parallel jobs
+[kv_longctx.shard0.csv] 1/1 4096
+[kv_longctx.shard0.csv] wrote 96 rows -> results/kv_longctx.shard0.csv

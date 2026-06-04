@@ -1,0 +1,5 @@
+[run.sbatch] node=pax12.sv9.i.etched.com script=experiments/run_eagle.py shard=2/4 jobs=48
+[podman_run] node=pax12.sv9.i.etched.com podman_base=/scratch/podman/mihika
+Using 48 parallel jobs
+[eagle.shard2.csv] 1/1 2048
+[eagle.shard2.csv] wrote 256 rows -> results/eagle.shard2.csv

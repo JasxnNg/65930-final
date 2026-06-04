@@ -1,0 +1,25 @@
+[run.sbatch] node=pax12.sv9.i.etched.com script=experiments/run_scheduler.py shard=2/8 jobs=48
+[podman_run] node=pax12.sv9.i.etched.com podman_base=/scratch/podman/mihika
+[podman_run] pulling timeloopaccelergy/accelforge:latest-amd64 ...
+Resolving "timeloopaccelergy/accelforge" using unqualified-search registries (/etc/containers/registries.conf)
+Trying to pull registry.access.redhat.com/timeloopaccelergy/accelforge:latest-amd64...
+Trying to pull registry.redhat.io/timeloopaccelergy/accelforge:latest-amd64...
+Trying to pull docker.io/timeloopaccelergy/accelforge:latest-amd64...
+Getting image source signatures
+Copying blob sha256:52d4f32263cc71b706a7fd5d3b89722c8012b3bd97f083ca67c5d358ec470357
+Copying blob sha256:3fb279f152079ac70870cc494204efd85e4ca0c17b28e5289cee0667ae76e365
+Copying blob sha256:722accdd7d9816683a52e9b58db53e5b2d296e19223d57f37bb863000acd4b20
+Copying blob sha256:9e52064373b4045eb88d4b7b7511c9774120e9eb6c32ff5f07663c70e631abd7
+Copying blob sha256:689b91d88a0f4086057ec826027b128902ecf2b516be510371c115bc55da19a6
+Copying blob sha256:6fe3575707ce04eb02a072693b770e1017a6dfb2a5f3471c808cd2f16512c28c
+Copying blob sha256:d5dbfb9fc211ca9c649acbc45947fc2f7e9667be9aff5c8b8fcbfe2a48a8782e
+Copying blob sha256:696a1f79d88df947bf6959e72ebd6be1b4655628ce7b8e63836a489c441d6ed4
+Copying blob sha256:3a91127a27f287f5bd1692d844d80dc114c9aff9387f84149f55216f64fc4872
+Copying blob sha256:304f6551af4051116c4e2e4eac5249f8ac8a9fb647fe1e230a49d1d647f85c9e
+Copying blob sha256:f8dfb6b23a6084346d2af4899b95c49ff77f3aa4dab66104cbc5cd7346649929
+Copying config sha256:be9df8d8ae2f51eec4ebf92baf8226ff8abb17e5cd66cc76035525277310d52e
+Writing manifest to image destination
+be9df8d8ae2f51eec4ebf92baf8226ff8abb17e5cd66cc76035525277310d52e
+Using 48 parallel jobs
+[scheduler.shard2.csv] 1/1 1536
+[scheduler.shard2.csv] wrote 192 rows -> results/scheduler.shard2.csv

@@ -1,0 +1,99 @@
+# KV-cache organization variant: SEPARATE K and V buffers (vs the unified KV buffer in
+# arch_kv_buffer.yaml). Tests whether splitting the K and V streams into independent
+# read-optimized buffers helps speculative verification, which rereads K and V heavily.
+{% set VERIFY_FANOUT = VERIFY_FANOUT | default(4) %}
+{% set KV_HALF_SIZE = KV_HALF_SIZE | default(1024*1024*64*8) %}  # 64MB each -> 128MB total
+{% set KV_CACHE_READ_ENERGY = KV_CACHE_READ_ENERGY | default(0.40e-12) %}
+{% set KV_CACHE_WRITE_ENERGY = KV_CACHE_WRITE_ENERGY | default(0.55e-12) %}
+{% set KV_CACHE_READ_BW = KV_CACHE_READ_BW | default(4096e9) %}
+{% set KV_CACHE_WRITE_BW = KV_CACHE_WRITE_BW | default(1024e9) %}
+{% set KV_CACHE_AREA = KV_CACHE_AREA | default(14e-6) %}
+
+arch:
+  nodes:
+  - !Memory
+    name: MainMemory
+    size: inf
+    leak_power: 0
+    area: 0
+    actions:
+    - {name: read, energy: 7.03e-12, latency: 1 / (8 * 614e9)}
+    - {name: write, energy: 7.03e-12, latency: 1 / (8 * 614e9)}
+    tensors: {keep: ~Intermediates, may_keep: All - QK_softmax - Q_new - K}
+
+  - !Memory
+    name: GlobalBuffer
+    size: 1024*1024*128*8 # 128MB
+    total_latency: max(read_latency, write_latency)
+    leak_power: 0
+    area: 112e-6
+    actions:
+    - {name: read, energy: 1.88e-12, latency: 1 / (8 * 2048e9)}
+    - {name: write, energy: 2.36e-12, latency: 1 / (8 * 1024e9)}
+    tensors: {keep: ~MainMemory.tensors, may_keep: All - K - V}
+
+  - !Memory
+    name: KBuffer
+    size: {{KV_HALF_SIZE}}
+    total_latency: max(read_latency, write_latency)
+    leak_power: 0
+    area: {{KV_CACHE_AREA}}
+    actions:
+    - {name: read, energy: {{KV_CACHE_READ_ENERGY}}, latency: 1 / (8 * {{KV_CACHE_READ_BW}})}
+    - {name: write, energy: {{KV_CACHE_WRITE_ENERGY}}, latency: 1 / (8 * {{KV_CACHE_WRITE_BW}})}
+    tensors: {keep: K, may_keep: K}
+
+  - !Memory
+    name: VBuffer
+    size: {{KV_HALF_SIZE}}
+    total_latency: max(read_latency, write_latency)
+    leak_power: 0
+    area: {{KV_CACHE_AREA}}
+    actions:
+    - {name: read, energy: {{KV_CACHE_READ_ENERGY}}, latency: 1 / (8 * {{KV_CACHE_READ_BW}})}
+    - {name: write, energy: {{KV_CACHE_WRITE_ENERGY}}, latency: 1 / (8 * {{KV_CACHE_WRITE_BW}})}
+    tensors: {keep: V, may_keep: V}
+
+  - !Memory
+    name: LocalBuffer
+    spatial: [{name: Z, fanout: 4, may_reuse: Nothing, min_usage: 1}]
+    size: 1024*1024*4*8 # 4MB
+    leak_power: 0
+    area: 51e-6
+    actions:
+    - {name: read, energy: 0.249e-12, latency: 0}
+    - {name: write, energy: 0.293e-12, latency: 0}
+    tensors: {keep: input | output}
+
+  - !Compute
+    name: ScalarUnit
+    area: 8.7e-6
+    leak_power: 0
+    actions:
+    - {name: compute, energy: 0, latency: 1 / 1.05e9 / 128}
+    enabled: len(All) == 2
+
+  - !Container
+    name: ProcessingElement
+    spatial:
+    - {name: verify_m, fanout: {{VERIFY_FANOUT}}, may_reuse: weight, reuse: weight, min_usage: 0.0, power_gateable: True}
+    - {name: reuse_input, fanout: 128, may_reuse: input, reuse: input, min_usage: 1}
+    - {name: reuse_output, fanout: 128, may_reuse: output, reuse: output, min_usage: 1}
+
+  - !Memory
+    name: Register
+    size: weight.bits_per_value if weight else 0
+    area: 8.5e-11
+    leak_power: 0
+    actions:
+    - {name: read, energy: 0, latency: 0}
+    - {name: write, energy: 0, latency: 0}
+    tensors: {keep: weight}
+
+  - !Compute
+    name: MAC
+    leak_power: 0
+    area: 8.5e-10
+    actions:
+    - {name: compute, energy: 0.084e-12, latency: 1 / 1.05e9}
+    enabled: len(All) == 3

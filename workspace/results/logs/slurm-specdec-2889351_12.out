@@ -1,0 +1,8 @@
+[run.sbatch] node=pax34.sv9.i.etched.com script=experiments/run_kv_dataflow.py shard=12/16 jobs=48
+[podman_run] node=pax34.sv9.i.etched.com podman_base=/tmp/podman-mihika
+Using 48 parallel jobs
+[kv_dataflow.shard12.csv] 1/4 {'arch': 'hier', 'ctx': 512, 'extra': (('VERIFY_FANOUT', 2),), 'meta': {'study': 'verify_fanout', 'setting': 'vf2'}}
+[kv_dataflow.shard12.csv] 2/4 {'arch': 'hier', 'ctx': 1024, 'extra': (('VERIFY_FANOUT', 2),), 'meta': {'study': 'verify_fanout', 'setting': 'vf2'}}
+[kv_dataflow.shard12.csv] 3/4 {'arch': 'hier', 'ctx': 2048, 'extra': (('VERIFY_FANOUT', 2),), 'meta': {'study': 'verify_fanout', 'setting': 'vf2'}}
+[kv_dataflow.shard12.csv] 4/4 {'arch': 'hier', 'ctx': 4096, 'extra': (('VERIFY_FANOUT', 2),), 'meta': {'study': 'verify_fanout', 'setting': 'vf2'}}
+[kv_dataflow.shard12.csv] wrote 320 rows -> results/kv_dataflow.shard12.csv
