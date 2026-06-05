@@ -1,0 +1,9 @@
+[run.sbatch] node=pax10.sv9.i.etched.com script=experiments/run_batch.py shard=11/12 jobs=48
+[podman_run] node=pax10.sv9.i.etched.com podman_base=/scratch/podman/mihika
+Using 48 parallel jobs
+[batch.shard11.csv] 1/5 (1, 1)
+[batch.shard11.csv] 2/5 (2, 4)
+[batch.shard11.csv] 3/5 (3, 16)
+[batch.shard11.csv] 4/5 (4, 64)
+[batch.shard11.csv] 5/5 (5, 256)
+[batch.shard11.csv] wrote 10 rows -> results/batch.shard11.csv

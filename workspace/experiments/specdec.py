@@ -97,19 +97,40 @@ def _map(arch_name, model_name, tokens, n_new, batch, bits, keep_main, extra):
 # ---------------------------------------------------------------------------
 # Cost-model steps.
 # ---------------------------------------------------------------------------
-def draft_step(arch, ctx, *, model=DRAFT_MODEL, bits=8, extra=()):
-    """One draft-model token at context length `ctx`."""
-    return _map(arch, model, ctx, 1, 1, bits, False, extra)
+def draft_step(arch, ctx, *, model=DRAFT_MODEL, bits=8, batch=1, extra=()):
+    """One draft-model token at context length `ctx` (for `batch` sequences)."""
+    return _map(arch, model, ctx, 1, batch, bits, False, extra)
 
 
-def baseline_step(arch, ctx, *, model=TARGET_MODEL, bits=8, extra=()):
-    """One target-model autoregressive token at context length `ctx`."""
-    return _map(arch, model, ctx + 1, 1, 1, bits, False, extra)
+def baseline_step(arch, ctx, *, model=TARGET_MODEL, bits=8, batch=1, extra=()):
+    """One target-model autoregressive token at context `ctx` (for `batch` sequences)."""
+    return _map(arch, model, ctx + 1, 1, batch, bits, False, extra)
 
 
-def verify_step(arch, ctx, gamma, *, model=TARGET_MODEL, bits=8, extra=()):
-    """One target-model parallel verification of `gamma` speculative tokens."""
-    return _map(arch, model, ctx + gamma, gamma, 1, bits, True, extra)
+def verify_step(arch, ctx, gamma, *, model=TARGET_MODEL, bits=8, batch=1, extra=()):
+    """One target-model parallel verification of `gamma` tokens (for `batch` sequences)."""
+    return _map(arch, model, ctx + gamma, gamma, batch, bits, True, extra)
+
+
+# ---------------------------------------------------------------------------
+# Batched throughput / TPOT (Time Per Output Token).
+#   With batch B, one decode step emits B tokens. TPOT is the per-sequence
+#   inter-token latency; throughput is the aggregate output tokens/second.
+# ---------------------------------------------------------------------------
+def baseline_batch(arch, ctx, batch, *, target=TARGET_MODEL, bits=8, target_layers=1,
+                   extra=()):
+    _, l = baseline_step(arch, ctx, model=target, bits=bits, batch=batch, extra=extra)
+    l *= target_layers
+    return {"tpot": l, "throughput": batch / l}
+
+
+def spec_batch(arch, ctx, gamma, alpha, batch, *, draft=DRAFT_MODEL, target=TARGET_MODEL,
+               bits=8, draft_layers=1, target_layers=1, extra=()):
+    _, dl = draft_step(arch, ctx, model=draft, bits=bits, batch=batch, extra=extra)
+    _, vl = verify_step(arch, ctx, gamma, model=target, bits=bits, batch=batch, extra=extra)
+    round_l = gamma * dl * draft_layers + vl * target_layers
+    y = expected_tokens_per_round(gamma, alpha)
+    return {"tpot": round_l / y, "throughput": batch * y / round_l}
 
 
 def expected_tokens_per_round(gamma, alpha):
@@ -162,40 +183,44 @@ def spec_per_token(arch, ctx, gamma, alpha, *, draft=DRAFT_MODEL,
 #   * Tree drafting + verification: the target verifies a whole candidate tree in
 #     one pass (N_NEW = tree size).  expected accepted length uses a tree model.
 # ---------------------------------------------------------------------------
-def eagle_draft_step(arch, ctx, *, target=TARGET_MODEL, bits=8, extra=()):
-    """One EAGLE draft expansion: a single block at target width."""
-    # single decode token through one target-width block
-    return _map(arch, target, ctx, 1, 1, bits, False, extra)
+def eagle_draft_pass(arch, ctx, frontier, *, target=TARGET_MODEL, bits=8, extra=()):
+    """One EAGLE draft forward pass: a SINGLE target-width decoder layer processing the
+    current tree frontier (M=frontier candidates in parallel) attending to the full
+    preceding sequence (M_FULL=ctx).
+
+    Per the EAGLE-3 paper (Fig. 6), draft tokens attend to the whole prefix (the draft
+    head's KV spans the context), so M_FULL=ctx is correct; the tree mask only blocks
+    cross-branch attention among the few tree tokens (negligible). Processing the
+    frontier in parallel (M=frontier) rather than one token (M=1) is the faithful model,
+    though the draft layer is weight-bound so it barely changes cost.
+    """
+    return _map(arch, target, ctx, max(1, frontier), 1, bits, False, extra)
 
 
 def expected_tokens_tree(depth, width, alpha):
-    """Expected number of accepted tokens for a (depth x width) candidate tree.
-
-    At each depth level we keep `width` candidate continuations; the chain is
-    accepted as long as at least one candidate at the next level matches. The
-    probability that the deepest accepted position reaches level k is the prob that
-    every level up to k has >=1 accepted candidate. With per-token accept prob alpha
-    and `width` independent candidates, P(level ok) = 1 - (1-alpha)**width.
-    Expected accepted length = sum_{k=1..depth} p**k  (+ the always-correct token).
-    """
+    """OPTIMISTIC reference only (independent-candidate assumption): with `width`
+    candidates per level, per-level accept p = 1-(1-alpha)**width saturates to ~1, badly
+    over-estimating the accepted length. Kept for comparison; the headline EAGLE results
+    use a calibrated acceptance length tau (see eagle_per_token) grounded in the EAGLE-3
+    paper's measured tau ~ 5.8-6.6 (Table 1)."""
     if alpha >= 1.0:
         return depth + 1
     p = 1 - (1 - alpha) ** width
     if p >= 1.0:
         return depth + 1
-    # sum_{k=1}^{depth} p^k  = p (1-p^depth)/(1-p)
     return 1 + p * (1 - p ** depth) / (1 - p)
 
 
-def eagle_round_cost(arch, ctx, depth, width, *, target=TARGET_MODEL, bits=8,
+def eagle_round_cost(arch, ctx, depth, tree_nodes, *, target=TARGET_MODEL, bits=8,
                      target_layers=1, extra=()):
-    """`depth` cheap draft expansions + 1 tree verify of (depth*width) nodes."""
-    tree_nodes = depth * width
+    """`depth` single-layer draft passes (frontier ~ tree_nodes/depth each) + one
+    full-target tree verification of `tree_nodes` candidates."""
+    frontier = max(1, round(tree_nodes / depth))
     e = l = 0.0
     for i in range(depth):
-        de, dl = eagle_draft_step(arch, ctx + i, target=target, bits=bits, extra=extra)
-        # one block, not the full target stack
-        e += de
+        de, dl = eagle_draft_pass(arch, ctx + i, frontier, target=target, bits=bits,
+                                  extra=extra)
+        e += de  # one layer, not the full target stack
         l += dl
     ve, vl = verify_step(arch, ctx, tree_nodes, model=target, bits=bits, extra=extra)
     e += ve * target_layers
@@ -203,12 +228,14 @@ def eagle_round_cost(arch, ctx, depth, width, *, target=TARGET_MODEL, bits=8,
     return e, l
 
 
-def eagle_per_token(arch, ctx, depth, width, alpha, *, target=TARGET_MODEL, bits=8,
+def eagle_per_token(arch, ctx, depth, tree_nodes, tau, *, target=TARGET_MODEL, bits=8,
                     target_layers=1, extra=()):
-    e, l = eagle_round_cost(arch, ctx, depth, width, target=target, bits=bits,
+    """Per-token cost using a CALIBRATED average acceptance length tau (tokens accepted
+    per drafting-verification round), rather than deriving it from a flawed independence
+    model. EAGLE-3 reports tau ~ 5.8-6.6 (paper Table 1)."""
+    e, l = eagle_round_cost(arch, ctx, depth, tree_nodes, target=target, bits=bits,
                             target_layers=target_layers, extra=extra)
-    y = expected_tokens_tree(depth, width, alpha)
-    return e / y, l / y
+    return e / tau, l / tau
 
 
 def clear_caches():

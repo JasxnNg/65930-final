@@ -10,10 +10,16 @@ via podman; the login node is not used for compute.
 - `run_scheduler.py` — P1, optimal scheduler (ctx × γ × α on `arch_kv_buffer`).
 - `run_generality.py` — P2, precision / model-scale / memory-hierarchy.
 - `run_kv_dataflow.py`, `run_kv_longctx.py` — P3, KV organizations + verify dataflow (to 32k).
-- `run_eagle.py` — EAGLE-3 (depth-aware: 1-layer draft + tree verify).
+- `run_eagle.py` — EAGLE-3 (depth-aware: 1-layer draft + tree verify; yield from a
+  calibrated acceptance length τ, paper-grounded τ≈6).
+- `run_batch.py` — batch sweep: TPOT/throughput, speculative break-even batch B*,
+  load-aware lookahead γ*(α,B), and B* vs draft/target ratio and DRAM bandwidth.
+- `run_arch_throughput.py` — memory-layout configs + DRAM-bandwidth roofline for throughput.
 - `make_figures.py` — reads `results/*.csv`, writes `figures/*.{png,pdf}` + validations.
+  Sections: scheduler, generality, kv_dataflow, kv_longctx, eagle, batch, arch_throughput.
 - `slurm/run.sbatch`, `slurm/podman_run.sh` — Slurm array wrapper + container launcher.
-- `smoke.py`, `sanity.py` — environment / model sanity checks.
+- `smoke.py`, `sanity.py`, `batch_sanity.py`, `arch_probe.py`, `eagle_audit.py` —
+  environment / model / cost-split sanity checks.
 
 ## Run
 ```bash
@@ -24,6 +30,8 @@ sbatch --array=0-10 experiments/slurm/run.sbatch experiments/run_generality.py
 sbatch --array=0-15 experiments/slurm/run.sbatch experiments/run_kv_dataflow.py
 sbatch --array=0-3  experiments/slurm/run.sbatch experiments/run_kv_longctx.py
 sbatch --array=0-3  experiments/slurm/run.sbatch experiments/run_eagle.py
+sbatch --array=0-11 experiments/slurm/run.sbatch experiments/run_batch.py
+sbatch --array=0-9  experiments/slurm/run.sbatch experiments/run_arch_throughput.py
 # after completion, merge shards + generate figures:
 srun -p gen_pop_rhel8 --qos=asic -c 2 --mem=8G --time=00:15:00 \
   bash experiments/slurm/podman_run.sh experiments/make_figures.py

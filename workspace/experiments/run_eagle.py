@@ -1,14 +1,13 @@
-"""EAGLE-3 vs vanilla speculative decoding vs baseline.
+"""EAGLE-3 vs vanilla speculative decoding vs baseline (calibrated acceptance length).
 
-EAGLE's benefit is a *single-layer* draft (reusing target features) plus *tree* drafting
-verified in one target pass. Capturing the layer-count reduction requires depth-aware
-costs, so this experiment uses realistic n_layers for draft and target (unlike the
-single-block convention used in the scheduler/KV studies).
+EAGLE's benefit is a single-layer draft (reusing target features) + tree drafting
+verified in one target pass. Capturing the layer-count reduction needs depth-aware costs
+(draft 32 layers, target 96).
 
-Methods (per-token latency/energy on the kv_buffer arch):
-  * baseline     : full target autoregressive decode (Lt layers).
-  * vanilla spec : Ld-layer draft model, gamma-token linear verify.
-  * eagle        : 1-layer target-width draft, (depth x width) tree verify.
+Crucially, the per-token yield uses a CALIBRATED average acceptance length tau rather than
+the optimistic independence tree model. The EAGLE-3 paper (Li et al. 2025, Table 1)
+reports tau ~ 5.8-6.6 (mean 6.6 for Vicuna-13B, ~6.2 for LLaMA-3.1-8B) with batch-1
+speedups of 4.1-5.5x; we sweep tau in {4,5,6,7} and mark tau=6.
 
 Sharded by context.
 """
@@ -18,7 +17,9 @@ ARCH = "kv_buffer"
 CTXS = [512, 1024, 2048, 4096]
 ALPHAS = sd.ALPHAS_DEFAULT
 GAMMAS = [1, 2, 4, 6, 8, 10, 12]
-TREES = [(4, 1), (6, 1), (8, 1), (4, 2), (6, 2), (8, 2), (6, 4), (8, 4)]
+# representative EAGLE-2/3 dynamic trees: (depth, total tree nodes)
+TREES = {"tree_d6_n25": (6, 25), "tree_d7_n48": (7, 48), "tree_d8_n60": (8, 60)}
+TAUS = [4, 5, 6, 7]            # paper-reported acceptance-length range
 OUT = "results/eagle.csv"
 
 DRAFT, TARGET = sd.DRAFT_MODEL, sd.TARGET_MODEL
@@ -28,36 +29,34 @@ LT = sd.MODELS[TARGET]["n_layers"]
 
 def make_rows(ctx):
     rows = []
-    # baseline: independent of alpha
     be, bl = sd.baseline_step(ARCH, ctx, model=TARGET)
-    be *= LT
-    bl *= LT
-    base = {"experiment": "eagle", "arch": ARCH, "ctx": ctx,
-            "Ld": LD, "Lt": LT}
+    be, bl = be * LT, bl * LT
+    base = {"experiment": "eagle", "arch": ARCH, "ctx": ctx, "Ld": LD, "Lt": LT}
 
-    # precompute vanilla round costs per gamma and eagle round costs per tree
-    van = {g: sd.spec_round_cost(ARCH, ctx, g, draft=DRAFT, target=TARGET,
-                                 draft_layers=LD, target_layers=LT) for g in GAMMAS}
-    eag = {(d, w): sd.eagle_round_cost(ARCH, ctx, d, w, target=TARGET, target_layers=LT)
-           for (d, w) in TREES}
+    # baseline
+    rows.append({**base, "method": "baseline", "config": "ar", "tau": 1.0,
+                 "L_per_tok": bl, "E_per_tok": be, "latency_speedup": 1.0,
+                 "energy_ratio": 1.0})
 
-    for a in ALPHAS:
-        rows.append({**base, "method": "baseline", "config": "ar", "alpha": a,
-                     "L_per_tok": bl, "E_per_tok": be,
-                     "latency_speedup": 1.0, "energy_ratio": 1.0})
-        for g in GAMMAS:
-            re, rl = van[g]
-            y = sd.expected_tokens_per_round(g, a)
-            sl, se = rl / y, re / y
+    # vanilla speculative: yield (tau) derived from (gamma, alpha)
+    for g in GAMMAS:
+        re, rl = sd.spec_round_cost(ARCH, ctx, g, draft=DRAFT, target=TARGET,
+                                    draft_layers=LD, target_layers=LT)
+        for a in ALPHAS:
+            tau = sd.expected_tokens_per_round(g, a)
+            sl, se = rl / tau, re / tau
             rows.append({**base, "method": "vanilla", "config": f"g{g}", "alpha": a,
-                         "L_per_tok": sl, "E_per_tok": se,
+                         "tau": tau, "L_per_tok": sl, "E_per_tok": se,
                          "latency_speedup": bl / sl, "energy_ratio": se / be})
-        for (d, w) in TREES:
-            re, rl = eag[(d, w)]
-            y = sd.expected_tokens_tree(d, w, a)
-            sl, se = rl / y, re / y
-            rows.append({**base, "method": "eagle", "config": f"d{d}w{w}", "alpha": a,
-                         "tree_depth": d, "tree_width": w,
+
+    # EAGLE-3: single-layer draft + tree verify, calibrated tau
+    for name, (depth, nodes) in TREES.items():
+        re, rl = sd.eagle_round_cost(ARCH, ctx, depth, nodes, target=TARGET,
+                                     target_layers=LT)
+        for tau in TAUS:
+            sl, se = rl / tau, re / tau
+            rows.append({**base, "method": "eagle", "config": name, "tau": float(tau),
+                         "tree_depth": depth, "tree_nodes": nodes,
                          "L_per_tok": sl, "E_per_tok": se,
                          "latency_speedup": bl / sl, "energy_ratio": se / be})
     return rows

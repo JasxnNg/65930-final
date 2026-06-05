@@ -1,0 +1,9 @@
+[run.sbatch] node=pax10.sv9.i.etched.com script=experiments/run_arch_throughput.py shard=8/10 jobs=48
+[podman_run] node=pax10.sv9.i.etched.com podman_base=/scratch/podman/mihika
+Using 48 parallel jobs
+[arch_throughput.shard8.csv] 1/5 ('named', 'split_K_V', 256, 4096)
+[arch_throughput.shard8.csv] 2/5 ('named', 'tpu_v8', 16, 2048)
+[arch_throughput.shard8.csv] 3/5 ('roofline', '614GBps', 4, 4096)
+[arch_throughput.shard8.csv] 4/5 ('roofline', '1500GBps', 1024, 4096)
+[arch_throughput.shard8.csv] 5/5 ('roofline', '8000GBps', 64, 4096)
+[arch_throughput.shard8.csv] wrote 5 rows -> results/arch_throughput.shard8.csv

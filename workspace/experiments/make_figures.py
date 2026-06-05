@@ -213,42 +213,66 @@ def kv_dataflow():
 def eagle():
     df = _load("eagle")
     ctxs = sorted(df.ctx.unique())
-    a0 = _nearest_alpha(df, 0.8)
+    c0 = 2048 if 2048 in ctxs else ctxs[len(ctxs) // 2]
+    TAU_CAL, TREE = 6.0, "tree_d7_n48"            # calibrated to paper (tau~5.8-6.6)
+    PAPER_LO, PAPER_HI = 4.1, 5.5                  # paper batch-1 speedup range (Table 1)
 
-    def best(method, ctx, a, metric="L_per_tok"):
-        s = df[(df.method == method) & (df.ctx == ctx) & (df.alpha == a)]
+    base = df[df.method == "baseline"].set_index("ctx").L_per_tok
+    van = df[df.method == "vanilla"]
+    eag = df[df.method == "eagle"]
+    a0 = _nearest_alpha(van, 0.8)
+
+    def best_van(ctx, metric="L_per_tok"):
+        s = van[(van.ctx == ctx) & (van.alpha == a0)]
         return s.loc[s[metric].idxmin()]
 
-    # Fig: per-token latency vs ctx for baseline / best vanilla / best eagle
+    def eagle_cal(ctx):
+        s = eag[(eag.ctx == ctx) & (eag.config == TREE) & (eag.tau == TAU_CAL)]
+        return s.iloc[0]
+
+    # Fig 1: per-token latency & energy vs ctx (baseline / best vanilla / EAGLE tau=6)
     fig, (axl, axe) = plt.subplots(1, 2, figsize=(11, 4.2))
-    for method, style in [("baseline", "k:"), ("vanilla", "o--"), ("eagle", "s-")]:
-        L = [best(method, c, a0, "L_per_tok").L_per_tok for c in ctxs]
-        E = [best(method, c, a0, "E_per_tok").E_per_tok for c in ctxs]
-        axl.plot(ctxs, L, style, label=method)
-        axe.plot(ctxs, E, style, label=method)
+    series = {
+        "baseline": ([base[c] for c in ctxs],
+                     [df[(df.method == "baseline") & (df.ctx == c)].E_per_tok.iloc[0] for c in ctxs], "k:"),
+        f"best vanilla (α={a0:.2f})": ([best_van(c).L_per_tok for c in ctxs],
+                                       [best_van(c).E_per_tok for c in ctxs], "o--"),
+        f"EAGLE-3 (τ={TAU_CAL:.0f})": ([eagle_cal(c).L_per_tok for c in ctxs],
+                                       [eagle_cal(c).E_per_tok for c in ctxs], "s-"),
+    }
+    for label, (L, E, st) in series.items():
+        axl.plot(ctxs, L, st, label=label); axe.plot(ctxs, E, st, label=label)
     axl.set_ylabel("per-token latency (s)"); axe.set_ylabel("per-token energy (J)")
     for ax in (axl, axe):
         ax.set_xlabel("context length"); ax.legend()
-    fig.suptitle(f"EAGLE-3 vs vanilla spec vs baseline (depth-aware, α={a0:.2f})")
+    fig.suptitle("EAGLE-3 (calibrated τ) vs vanilla spec vs baseline (depth-aware)")
     save(fig, "p4_eagle_vs_vanilla")
 
-    # Fig: speedup vs alpha at ctx=2048
-    c0 = 2048 if 2048 in ctxs else ctxs[len(ctxs) // 2]
-    alphas = sorted(df.alpha.unique())
-    fig, ax = plt.subplots(figsize=(6, 4.2))
-    for method, style in [("vanilla", "o--"), ("eagle", "s-")]:
-        sp = [best(method, c0, a).latency_speedup for a in alphas]
-        ax.plot(alphas, sp, style, label=f"best {method}")
+    # Fig 2: speedup vs ACHIEVED acceptance length tau (the common currency)
+    fig, ax = plt.subplots(figsize=(6.4, 4.4))
+    v = van[van.ctx == c0].sort_values("tau")
+    ax.plot(v.tau, v.latency_speedup, "o", ms=4, alpha=0.5, label="vanilla (γ,α sweep)")
+    for tree, s in eag[eag.ctx == c0].groupby("config"):
+        s = s.sort_values("tau")
+        ax.plot(s.tau, s.latency_speedup, "s-", label=f"EAGLE-3 {tree}")
+    ax.axvspan(5.8, 6.6, color="green", alpha=0.10, label="paper τ (Table 1)")
+    ax.axhspan(PAPER_LO, PAPER_HI, color="orange", alpha=0.08, label="paper speedup")
     ax.axhline(1, color="k", lw=0.8, ls=":")
-    ax.set_xlabel("acceptance α"); ax.set_ylabel("latency speedup vs baseline")
-    ax.set_title(f"EAGLE-3 vs vanilla: speedup vs α (ctx={c0})")
-    ax.legend()
-    save(fig, "p4_eagle_speedup_vs_alpha")
+    ax.set_xlabel("achieved acceptance length τ (tokens/round)")
+    ax.set_ylabel("latency speedup vs baseline")
+    ax.set_title(f"Speedup vs acceptance length (ctx={c0})")
+    ax.legend(fontsize=8)
+    save(fig, "p4_eagle_speedup_vs_tau")
 
-    print(f"\n[EAGLE] @ctx={c0}, α={a0:.2f}:")
-    for m in ("baseline", "vanilla", "eagle"):
-        b = best(m, c0, a0)
-        print(f"   {m:<9} L={b.L_per_tok:.3e}  speedup={b.latency_speedup:.2f}x  cfg={b.get('config','-')}")
+    e0 = eagle_cal(c0)
+    print(f"\n[EAGLE] ctx={c0}, calibrated τ={TAU_CAL:.0f}, tree={TREE}:")
+    print(f"   EAGLE-3 speedup = {e0.latency_speedup:.2f}x  (paper batch-1: {PAPER_LO}-{PAPER_HI}x)")
+    print(f"   best vanilla (α={a0:.2f}) speedup = {best_van(c0).latency_speedup:.2f}x "
+          f"(τ={best_van(c0).tau:.2f})")
+    for tau in sorted(eag.tau.unique()):
+        s = eag[(eag.ctx == c0) & (eag.config == TREE) & (eag.tau == tau)]
+        if len(s):
+            print(f"   τ={tau:.0f}: EAGLE-3 speedup = {s.iloc[0].latency_speedup:.2f}x")
 
 
 def kv_longctx():
@@ -277,8 +301,138 @@ def kv_longctx():
         print(f"   ctx={c:6d}: energy -{100*(1-k/b):.1f}%  latency -{100*(1-kl/bl):.1f}%")
 
 
+def _breakeven(bs, speedups):
+    """First batch where speedup crosses below 1.0 (linear interp on log2 B)."""
+    import numpy as _np
+    bs = _np.asarray(bs, float); sp = _np.asarray(speedups, float)
+    below = _np.where(sp < 1.0)[0]
+    if len(below) == 0:
+        return float("inf")
+    i = below[0]
+    if i == 0:
+        return bs[0]
+    x0, x1 = _np.log2(bs[i - 1]), _np.log2(bs[i])
+    y0, y1 = sp[i - 1], sp[i]
+    return float(2 ** (x0 + (1.0 - y0) * (x1 - x0) / (y1 - y0)))
+
+
+# ===========================================================================
+# Batch size: TPOT / throughput, break-even batch, load-aware lookahead
+# ===========================================================================
+def batch():
+    df = _load("batch")
+    main = df[df.study == "batch_main"]
+    a0 = 0.8
+    Bs = sorted(main.batch.unique())
+    base = main[main.method == "baseline"].sort_values("batch")
+
+    # Fig A: throughput saturation + TPOT-speedup decay with batch
+    fig, (axt, axs) = plt.subplots(1, 2, figsize=(11, 4.2))
+    axt.plot(base.batch, base.throughput, "k:o", label="baseline")
+    g4 = main[(main.method == "spec") & (main.gamma == 4) & (main.alpha == a0)].sort_values("batch")
+    axt.plot(g4.batch, g4.throughput, "s-", label="spec γ=4")
+    axt.set_xscale("log", base=2); axt.set_xlabel("batch size")
+    axt.set_ylabel("throughput (output tok/s)"); axt.legend()
+    axt.set_title(f"Throughput saturates with batch (α={a0})")
+    for g in [1, 2, 4, 8]:
+        s = main[(main.method == "spec") & (main.gamma == g) & (main.alpha == a0)].sort_values("batch")
+        axs.plot(s.batch, s.speedup, "o-", label=f"γ={g}")
+    axs.axhline(1, color="k", lw=1, ls="--", label="break-even")
+    axs.set_xscale("log", base=2); axs.set_xlabel("batch size")
+    axs.set_ylabel("spec speedup (=throughput gain)"); axs.legend(fontsize=8)
+    axs.set_title("Speculation decays with batch → break-even B*")
+    save(fig, "p5_batch_breakeven")
+
+    # Fig B: load-aware lookahead — throughput-optimal γ falls with batch
+    fig, ax = plt.subplots(figsize=(6, 4.2))
+    for a in [0.7, 0.8, 0.9]:
+        gstar = []
+        for B in Bs:
+            s = main[(main.method == "spec") & (main.alpha == a) & (main.batch == B)]
+            gstar.append(s.loc[s.throughput.idxmax()].gamma if len(s) else None)
+        ax.plot(Bs, gstar, "o-", label=f"α={a}")
+    ax.set_xscale("log", base=2); ax.set_xlabel("batch size")
+    ax.set_ylabel("throughput-optimal lookahead γ*")
+    ax.set_title("Load-aware lookahead: γ* shrinks as batch grows")
+    ax.legend()
+    save(fig, "p5_load_aware_gamma")
+
+    # Fig C: hardware levers on the break-even batch
+    fig, (axb, axr) = plt.subplots(1, 2, figsize=(11, 4.2))
+    bw = df[(df.study == "batch_bw") & (df.method == "spec")]
+    for setting, s in bw.groupby("setting"):
+        s = s.sort_values("batch")
+        axb.plot(s.batch, s.speedup, "o-", label=setting)
+    axb.axhline(1, color="k", lw=1, ls="--")
+    axb.set_xscale("log", base=2); axb.set_xlabel("batch size")
+    axb.set_ylabel("spec speedup"); axb.set_title("DRAM bandwidth shifts B* (γ=4, α=0.8)")
+    axb.legend(fontsize=8)
+    ratio = df[(df.study == "batch_ratio") & (df.method == "spec")]
+    for setting, s in ratio.groupby("setting"):
+        s = s.sort_values("batch")
+        axr.plot(s.batch, s.speedup, "o-", label=setting)
+    axr.axhline(1, color="k", lw=1, ls="--")
+    axr.set_xscale("log", base=2); axr.set_xlabel("batch size")
+    axr.set_ylabel("spec speedup"); axr.set_title("Draft/target ratio shifts B* (γ=4, α=0.8)")
+    axr.legend(fontsize=8)
+    save(fig, "p5_breakeven_hardware")
+
+    # numeric validation
+    print("\n[BATCH] break-even batch B* (speedup<1), main 6.7b->175b, α=0.8:")
+    for g in [1, 2, 4, 8]:
+        s = main[(main.method == "spec") & (main.gamma == g) & (main.alpha == a0)].sort_values("batch")
+        be = _breakeven(s.batch.tolist(), s.speedup.tolist())
+        print(f"   γ={g}: B*={be:.0f}" if be != float("inf") else f"   γ={g}: B*>{Bs[-1]}")
+    print("[BATCH] B* vs DRAM bandwidth (γ=4, α=0.8):")
+    for setting, s in df[(df.study == "batch_bw") & (df.method == "spec")].groupby("setting"):
+        s = s.sort_values("batch")
+        be = _breakeven(s.batch.tolist(), s.speedup.tolist())
+        print(f"   {setting:<8}: B*={be:.0f}" if be != float("inf") else f"   {setting:<8}: B*>{s.batch.max()}")
+
+
+# ===========================================================================
+# Architecture exploration for throughput
+# ===========================================================================
+def arch_throughput():
+    df = _load("arch_throughput")
+    named = df[df.kind == "named"]
+    op = (64, 4096)
+    s = named[(named.batch == op[0]) & (named.ctx == op[1])].copy().sort_values("spec_tput")
+
+    # Fig A: throughput vs energy across named configs
+    fig, ax = plt.subplots(figsize=(7, 4.4))
+    ax.barh(s.config, s.spec_tput, color="steelblue")
+    ax.set_xlabel("spec throughput (output tok/s)")
+    ax.set_title(f"What helps throughput? (B={op[0]}, ctx={op[1]}, γ=4, α=0.8)")
+    ax2 = ax.twiny()
+    ax2.plot(s.spec_energy_per_tok, s.config, "D", color="darkorange", label="energy/token")
+    ax2.set_xlabel("spec energy per token (J)  ◆")
+    save(fig, "p6_arch_named")
+
+    # Fig B: DRAM-bandwidth roofline — throughput vs batch
+    roof = df[df.kind == "roofline"]
+    fig, (axt, axs) = plt.subplots(1, 2, figsize=(11, 4.2))
+    for bw, g in sorted(roof.groupby("config"), key=lambda kv: float(kv[0][:-4])):
+        g = g.sort_values("batch")
+        axt.plot(g.batch, g.spec_tput, "o-", label=bw)
+        axs.plot(g.batch, g.tput_gain, "o-", label=bw)
+    axt.set_xscale("log", base=2); axt.set_yscale("log")
+    axt.set_xlabel("batch size"); axt.set_ylabel("spec throughput (tok/s)")
+    axt.set_title("Throughput roofline vs DRAM bandwidth"); axt.legend(fontsize=8)
+    axs.axhline(1, color="k", lw=1, ls="--")
+    axs.set_xscale("log", base=2); axs.set_xlabel("batch size")
+    axs.set_ylabel("spec speedup"); axs.set_title("Faster DRAM → smaller speculative speedup")
+    axs.legend(fontsize=8)
+    save(fig, "p6_dram_roofline")
+
+    print(f"\n[ARCH] spec throughput by config (B={op[0]}, ctx={op[1]}):")
+    for _, r in s.iterrows():
+        print(f"   {r.config:<20} tput={r.spec_tput:8.1f} tok/s  energy/tok={r.spec_energy_per_tok:.4f} J")
+
+
 SECTIONS = {"scheduler": scheduler, "generality": generality,
-            "kv_dataflow": kv_dataflow, "eagle": eagle, "kv_longctx": kv_longctx}
+            "kv_dataflow": kv_dataflow, "eagle": eagle, "kv_longctx": kv_longctx,
+            "batch": batch, "arch_throughput": arch_throughput}
 
 if __name__ == "__main__":
     which = sys.argv[1:] or list(SECTIONS)

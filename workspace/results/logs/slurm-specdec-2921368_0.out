@@ -1,0 +1,12 @@
+[run.sbatch] node=pax33.sv9.i.etched.com script=experiments/run_arch_throughput.py shard=0/10 jobs=48
+[podman_run] node=pax33.sv9.i.etched.com podman_base=/tmp/podman-mihika
+Using 48 parallel jobs
+[arch_throughput.shard0.csv] 1/6 ('named', 'unified_global', 16, 2048)
+[arch_throughput.shard0.csv] 2/6 ('named', 'big_global_256MB', 64, 4096)
+[arch_throughput.shard0.csv] 3/6 ('named', 'tpu_v8', 256, 4096)
+[arch_throughput.shard0.csv] 4/6 ('roofline', '614GBps', 64, 4096)
+[arch_throughput.shard0.csv] 5/6 ('roofline', '3000GBps', 4, 4096)
+/usr/local/lib/python3.12/dist-packages/joblib/externals/loky/process_executor.py:782: UserWarning: A worker stopped while some jobs were given to the executor. This can be caused by a too short worker timeout or by a memory leak.
+  warnings.warn(
+[arch_throughput.shard0.csv] 6/6 ('roofline', '8000GBps', 1024, 4096)
+[arch_throughput.shard0.csv] wrote 6 rows -> results/arch_throughput.shard0.csv

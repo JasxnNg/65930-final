@@ -1,0 +1,12 @@
+[run.sbatch] node=pax12.sv9.i.etched.com script=experiments/run_batch.py shard=9/12 jobs=48
+[podman_run] node=pax12.sv9.i.etched.com podman_base=/scratch/podman/mihika
+Using 48 parallel jobs
+[batch.shard9.csv] 1/6 (0, 512)
+[batch.shard9.csv] 2/6 (2, 1)
+[batch.shard9.csv] 3/6 (3, 4)
+[batch.shard9.csv] 4/6 (4, 16)
+/usr/local/lib/python3.12/dist-packages/joblib/externals/loky/process_executor.py:782: UserWarning: A worker stopped while some jobs were given to the executor. This can be caused by a too short worker timeout or by a memory leak.
+  warnings.warn(
+[batch.shard9.csv] 5/6 (5, 64)
+[batch.shard9.csv] 6/6 (6, 256)
+[batch.shard9.csv] wrote 27 rows -> results/batch.shard9.csv

@@ -155,28 +155,121 @@ where KV-aware memory design re-emerges as important.
 ## E. EAGLE-3 modeling
 
 We model EAGLE-3's two structural changes (`experiments/run_eagle.py`;
-Fig. `p4_eagle_vs_vanilla`, `p4_eagle_speedup_vs_alpha`): a **single-layer draft** that
-reuses the target's features (instead of a full draft model), and **tree drafting** in
-which the target verifies a (depth×width) candidate tree in one pass. Capturing the
-layer-count reduction requires depth-aware costs, so this experiment uses realistic
-layer counts (draft 32, target 96) for all three methods; the cheap draft is one
-target-width block and verification covers the whole tree
-(`expected_tokens_tree(depth,width,α)` with per-level acceptance `1−(1−α)^width`).
+Fig. `p4_eagle_vs_vanilla`, `p4_eagle_speedup_vs_tau`): a **single-layer draft** that
+reuses the target's fused features, and **tree drafting** in which the target verifies a
+candidate tree of `tree_nodes` tokens in one pass. Capturing the layer-count reduction
+requires depth-aware costs, so all methods use realistic layer counts (draft 32, target
+96); the EAGLE draft is one target-width block per tree-frontier pass, and verification
+is a full target pass over the tree.
 
-**EAGLE-3 roughly doubles the speculative speedup.** At ctx=2048, α=0.8 the best vanilla
-configuration (γ=8) reaches 3.3× over autoregressive decode, while the best EAGLE-3 tree
-(depth 8, width 4) reaches **8.1×** — and it cuts per-token energy by a similar factor.
-Two effects compound: the single-layer draft is far cheaper per drafted token than a
-full small model, and the tree raises the accepted-token yield per verification, so the
-expensive target pass is amortized over many more tokens. The advantage widens with α
-(Fig. `p4_eagle_speedup_vs_alpha`), where wide trees almost always extend the accepted
-prefix.
+**Calibrating the acceptance length to the paper.** Our first model derived the
+per-round accepted-token yield from an independence assumption
+(`1−(1−α)^width`), which saturates and *over*-estimated the yield (≈8.9 tokens/round →
+8.1× at α=0.8). The EAGLE-3 paper instead reports a measured **average acceptance length
+τ ≈ 5.8–6.6** (Table 1) with batch-1 speedups of **4.1–5.5×**. We therefore drive the
+EAGLE cost model directly by τ (a calibrated input, swept 4–7) rather than a flawed
+acceptance derivation. At the paper's τ=6 our model gives **5.44×** at ctx=2048 — squarely
+inside the paper's range — with a clean τ-sensitivity (3.6×/4.5×/5.4×/6.4× at τ=4/5/6/7;
+Fig. `p4_eagle_speedup_vs_tau`). Best vanilla speculation at α=0.8 reaches only 3.3×
+(τ≈4.3), so **EAGLE-3 is ≈1.6× faster than vanilla speculation**, matching the paper's
+"20–40% over EAGLE-2" framing.
 
-This makes the algorithmic verification dataflow the single largest lever we found,
-consistent with Section D's conclusion that algorithm beats micro-architecture for
-verification. *Caveat:* our tree-acceptance model treats candidates as independent and
-omits EAGLE's feature-fusion/training effects, so the absolute 8× is an optimistic upper
-bound; the qualitative ≈2× advantage over vanilla speculation is the robust takeaway.
+Plotting speedup against *achieved* τ (the common currency, Fig. `p4_eagle_speedup_vs_tau`)
+shows the deeper point: speedup is largely a function of the acceptance length, and
+EAGLE-3's contribution is **reaching a high τ (≈6) cheaply** — at realistic acceptance —
+where vanilla speculation would need near-perfect α. The EAGLE curves sit slightly above
+the vanilla cloud at matched τ (the single-layer draft is cheaper), but the dominant
+lever is τ itself.
+
+**Fidelity audit of the EAGLE cost model (`experiments/eagle_audit.py`).** We checked the
+three modeling concerns against the paper (Li et al. 2025, §3.1, Figs 5–6) and the cost
+split. The verify pass is **92% of the round** and the draft is only ~8%, so:
+- *Tree-frontier batching* (draft processes width>1 per pass, not one token): correct per
+  the paper, but the draft block is weight-bound, so M=1 vs M=width changes the round cost
+  by <0.1% (speedup unchanged). We model the frontier width anyway for fidelity.
+- *Multi-layer feature fusion input* (concatenated low/mid/high features → FC): real, but
+  an extra FC on the already-8% draft term — negligible.
+- *Draft attention scope*: the claim that the draft attends only to a tiny window is
+  **incorrect** — Fig. 6's masks show draft tokens attending to the full prefix (the draft
+  head's KV spans the context), so `M_FULL=ctx` is right; the tree mask only removes
+  cross-branch attention among the few tree tokens. Adopting the tiny-window assumption
+  changes the result by 0.2%.
+So the EAGLE result is governed by the (correctly modeled) verify pass and by τ, not by
+draft micro-modeling — which is exactly why calibrating τ was the change that mattered.
+
+---
+
+## G. Batch size, throughput, and the speculative break-even
+
+Decode serving runs many requests in one batch, which changes the picture entirely: the
+target *weights* are read once and amortized across the batch, while KV and compute grow
+with it. We model batched decode (`experiments/run_batch.py`) by indexing activations and
+KV — but not weights — with the batch dimension B, and report both **TPOT** (per-token
+latency) and **throughput** (output tokens/s). Note these are inverses of the same
+per-step latency, so "minimize TPOT" and "maximize tokens/s" give the *same* answer.
+
+**The model reproduces the memory→compute transition.** Baseline TPOT is flat at small B
+(3.0 ms at B=1–4: weight-bound) and rises steeply at large B (24 ms at B=256:
+compute-bound); throughput rises then saturates at a compute roof (Fig.
+`p5_batch_breakeven`).
+
+**Speculation's benefit decays with batch — a break-even batch B\*.** At small batch
+decode is weight-bound, so speculation's extra compute is nearly free and the speedup is
+large (2.3× at B=1, γ=4, α=0.8). As batch grows the accelerator becomes compute-bound and
+speculation's wasted/extra work is no longer hidden, so the speedup falls monotonically
+toward an asymptote of E[accepted]/γ. The EAGLE-3 paper observes exactly this on GPUs
+(Tables 3, 5: vanilla EAGLE throughput drops below 1.0× around batch 24, EAGLE-3 peaks at
+batch 56); our model reproduces the decay from first principles and lets us vary hardware
+the GPUs cannot.
+
+**B\* is set by the draft/target ratio, not a universal number** (Fig.
+`p5_breakeven_hardware`). With a modest draft/target gap (6.7B→30B) the speedup crosses
+1.0× at **B\*≈256–512**: above it, speculation *hurts* throughput. With a large gap
+(6.7B→175B, the draft ≈26× cheaper) the speedup never breaks even in our range — it
+plateaus at ≈1.33× even at the compute roof. So **a sufficiently cheap draft keeps
+speculation beneficial at every batch size**; choosing the draft governs not just the
+peak speedup (Section C) but whether a break-even exists at all.
+
+**Load-aware lookahead: γ\* shrinks as batch grows** (Fig. `p5_load_aware_gamma`). Because
+larger γ wastes more compute when the accelerator is loaded, the throughput-optimal
+lookahead falls with batch — e.g., at α=0.8, γ\*=4 at B≤64 but γ\*=2 by B=128; at α=0.9,
+γ\*=8 collapses to 4 by B≈32. Combined with the acceptance-dependence of Section B, the
+optimal lookahead is a **two-variable function γ\*(α, B)** of acceptance *and* load — a
+concrete scheduling rule that, to our knowledge, has not been characterized: an optimal
+scheduler should lower γ both when acceptance is low and when the batch is large.
+
+**Counter-intuitively, faster memory makes speculation *less* valuable.** Sweeping DRAM
+bandwidth (edge 100 GB/s → TPU-v4 614 GB/s → TPU-v8 3 TB/s) at fixed batch, the speculative
+speedup *decreases* with bandwidth (1.44× vs 1.33× vs 1.29× at B=512), because a
+bandwidth-rich accelerator is less memory-bound to begin with and has less weight-read
+cost for speculation to hide. Speculative decoding is thus most valuable on
+bandwidth-starved hardware (edge, low-cost), and its marginal value shrinks as
+accelerators add HBM bandwidth.
+
+## H. Memory-layout exploration for throughput
+
+We then asked the co-design question directly: *which accelerator memory configuration
+maximizes decode throughput?* (`experiments/run_arch_throughput.py`, `arch_probe.py`;
+Fig. `p6_arch_named`, `p6_dram_roofline`.) We compared a unified global buffer, a dedicated
+KV tier, split K/V tiers, a larger weight buffer, faster KV bandwidth, and higher DRAM
+bandwidth at B=64, ctx=4096.
+
+**On-chip SRAM layout is a weak throughput lever; DRAM bandwidth is the strong one.**
+Adding a dedicated KV tier (or simply more/separate buffering) lifts throughput by ~12%
+over the unified buffer by relieving port contention — but the KV tier's **size and
+bandwidth are irrelevant** (16 MB and 1 GB KV buffers give identical throughput). In the
+standard decode mapping, KV is streamed from DRAM once per step with no intra-step reuse,
+so a bigger/faster on-chip KV buffer cannot reduce the DRAM traffic that sets latency; it
+only lowers read *energy* (Section D). By contrast, raising DRAM bandwidth from 614 GB/s
+to 3 TB/s **nearly doubles throughput** (7.2k→12.7k tok/s) until a compute ceiling is hit
+(Fig. `p6_dram_roofline`). The throughput roofline is therefore a DRAM-bandwidth-and-
+compute story, not an on-chip-layout story.
+
+**Design takeaway.** For decode *throughput*, spend area on HBM bandwidth, not on a larger
+KV SRAM; reserve the KV tier for its real benefit, *energy* and *long-context* latency
+(Section D). The one caveat is that our single-step model does not capture *cross-step*
+KV residency (a KV cache pinned on-chip and reread across many steps) — the one regime
+where on-chip KV capacity could aid latency — which we flag as the most valuable extension.
 
 ---
 
@@ -209,16 +302,32 @@ yields a cleaner co-design story:
    optimization that grows to ≈9% at 32k. Long-context serving is where KV-aware memory
    design re-earns its place.
 
-5. **Algorithm beats architecture for verification.** EAGLE-3's single-layer draft plus
-   tree verification roughly doubles the speedup over vanilla speculation (≈8× vs ≈3.3× at
-   α=0.8). The biggest remaining lever is algorithmic, reinforcing that speculative
-   decoding is best co-designed across algorithm, schedule, and hardware.
+5. **Algorithm beats architecture for verification.** With the acceptance length τ
+   calibrated to the EAGLE-3 paper (τ≈6), EAGLE-3 reaches ≈5.4× over autoregressive decode
+   vs ≈3.3× for vanilla speculation at α=0.8 (≈1.6× advantage), validated against the
+   paper's 4.1–5.5×. Speedup is largely a function of τ; EAGLE's win is achieving high τ
+   cheaply. The biggest remaining lever is algorithmic.
+
+6. **There is a speculative break-even batch, set by the draft/target ratio.** Speculation's
+   speedup decays as batch grows and the accelerator becomes compute-bound. With a modest
+   draft/target gap it crosses 1.0× near batch 256–512 (beyond which speculation hurts
+   throughput); with a cheap-enough draft it never breaks even. The optimal lookahead is a
+   two-variable function γ\*(α, B): lower γ both when acceptance is low and when batch is
+   large ("load-aware lookahead").
+
+7. **For throughput, bandwidth beats layout — and speculation favors bandwidth-starved
+   hardware.** DRAM bandwidth roughly doubles decode throughput up to a compute ceiling,
+   while on-chip KV-tier size/bandwidth do not move throughput (only energy). Counter-
+   intuitively, faster memory *reduces* speculation's relative benefit, since a bandwidth-
+   rich accelerator is less memory-bound to begin with. Speculative decoding is therefore
+   most valuable on edge/low-bandwidth accelerators.
 
 **Limitations / future work.** Costs are modeled per transformer block (depth-aware only
-for the EAGLE comparison); the acceptance model is a scalar α (and an independence-based
-tree model for EAGLE) rather than a learned, content-dependent distribution; batching,
-PD-disaggregation, and SSD-offloaded KV are not yet modeled. Each is a natural extension
-of the released `experiments/` harness.
+for the EAGLE comparison); the acceptance model is a scalar α (with τ calibrated for
+EAGLE) rather than a learned, content-dependent distribution. The batched model is
+single-step and does not capture cross-step KV residency (the regime where on-chip KV
+capacity could aid latency). PD-disaggregation and SSD-offloaded KV are not yet modeled.
+Each is a natural extension of the released `experiments/` harness.
 
 ---
 
@@ -234,8 +343,13 @@ of the released `experiments/` harness.
 | `p3_kv_organizations` | D | Spec latency vs context for KV orgs / size / BW |
 | `p3_verify_fanout` | D | Spec latency & energy vs verify fanout |
 | `p3_kv_longctx` | D | KV organization to 32k context (energy diverges) |
-| `p4_eagle_vs_vanilla` | E | Per-token latency & energy: baseline / vanilla / EAGLE |
-| `p4_eagle_speedup_vs_alpha` | E | Speedup vs α: best vanilla vs best EAGLE tree |
+| `p4_eagle_vs_vanilla` | E | Per-token latency & energy: baseline / vanilla / EAGLE (τ=6) |
+| `p4_eagle_speedup_vs_tau` | E | Speedup vs achieved acceptance length τ; paper τ/speedup bands |
+| `p5_batch_breakeven` | G | Throughput saturation + speedup decay vs batch (break-even) |
+| `p5_load_aware_gamma` | G | Throughput-optimal γ\*(α, B): γ\* shrinks with batch |
+| `p5_breakeven_hardware` | G | Break-even batch vs DRAM bandwidth and draft/target ratio |
+| `p6_arch_named` | H | Throughput (and energy) across memory-layout configurations |
+| `p6_dram_roofline` | H | Throughput roofline + speedup vs batch across DRAM bandwidths |
 
 All figures are written as both PNG and PDF to `workspace/figures/`. Raw results are in
 `workspace/results/*.csv`; regenerate with `experiments/make_figures.py`.
