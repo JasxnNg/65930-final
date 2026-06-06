@@ -214,12 +214,15 @@ def eagle():
     df = _load("eagle")
     ctxs = sorted(df.ctx.unique())
     c0 = 2048 if 2048 in ctxs else ctxs[len(ctxs) // 2]
-    TAU_CAL, TREE = 6.0, "tree_d7_n48"            # calibrated to paper (tau~5.8-6.6)
+    TAU_CAL = 6.0                                 # calibrated to paper (tau~5.8-6.6)
+    PREFERRED_TREE = "tree_d6_n63"                # full-binary layers: 1 2 4 8 16 32
     PAPER_LO, PAPER_HI = 4.1, 5.5                  # paper batch-1 speedup range (Table 1)
 
     base = df[df.method == "baseline"].set_index("ctx").L_per_tok
     van = df[df.method == "vanilla"]
     eag = df[df.method == "eagle"]
+    tree_options = sorted(eag.config.unique())
+    TREE = PREFERRED_TREE if PREFERRED_TREE in tree_options else tree_options[len(tree_options) // 2]
     a0 = _nearest_alpha(van, 0.8)
 
     def best_van(ctx, metric="L_per_tok"):
@@ -317,7 +320,7 @@ def _breakeven(bs, speedups):
 
 
 # ===========================================================================
-# Batch size: TPOT / throughput, break-even batch, load-aware lookahead
+# Batch size: TPOT, break-even batch, load-aware lookahead
 # ===========================================================================
 def batch():
     df = _load("batch")
@@ -326,33 +329,33 @@ def batch():
     Bs = sorted(main.batch.unique())
     base = main[main.method == "baseline"].sort_values("batch")
 
-    # Fig A: throughput saturation + TPOT-speedup decay with batch
+    # Fig A: TPOT growth + TPOT-speedup decay with batch
     fig, (axt, axs) = plt.subplots(1, 2, figsize=(11, 4.2))
-    axt.plot(base.batch, base.throughput, "k:o", label="baseline")
+    axt.plot(base.batch, base.tpot * 1e3, "k:o", label="baseline")
     g4 = main[(main.method == "spec") & (main.gamma == 4) & (main.alpha == a0)].sort_values("batch")
-    axt.plot(g4.batch, g4.throughput, "s-", label="spec γ=4")
-    axt.set_xscale("log", base=2); axt.set_xlabel("batch size")
-    axt.set_ylabel("throughput (output tok/s)"); axt.legend()
-    axt.set_title(f"Throughput saturates with batch (α={a0})")
+    axt.plot(g4.batch, g4.tpot * 1e3, "s-", label="spec γ=4")
+    axt.set_xscale("log", base=2); axt.set_yscale("log"); axt.set_xlabel("batch size")
+    axt.set_ylabel("TPOT (ms/output token)"); axt.legend()
+    axt.set_title(f"TPOT rises with batch (α={a0})")
     for g in [1, 2, 4, 8]:
         s = main[(main.method == "spec") & (main.gamma == g) & (main.alpha == a0)].sort_values("batch")
         axs.plot(s.batch, s.speedup, "o-", label=f"γ={g}")
     axs.axhline(1, color="k", lw=1, ls="--", label="break-even")
     axs.set_xscale("log", base=2); axs.set_xlabel("batch size")
-    axs.set_ylabel("spec speedup (=throughput gain)"); axs.legend(fontsize=8)
+    axs.set_ylabel("TPOT speedup (baseline/spec)"); axs.legend(fontsize=8)
     axs.set_title("Speculation decays with batch → break-even B*")
     save(fig, "p5_batch_breakeven")
 
-    # Fig B: load-aware lookahead — throughput-optimal γ falls with batch
+    # Fig B: load-aware lookahead — TPOT-optimal γ falls with batch
     fig, ax = plt.subplots(figsize=(6, 4.2))
     for a in [0.7, 0.8, 0.9]:
         gstar = []
         for B in Bs:
             s = main[(main.method == "spec") & (main.alpha == a) & (main.batch == B)]
-            gstar.append(s.loc[s.throughput.idxmax()].gamma if len(s) else None)
+            gstar.append(s.loc[s.tpot.idxmin()].gamma if len(s) else None)
         ax.plot(Bs, gstar, "o-", label=f"α={a}")
     ax.set_xscale("log", base=2); ax.set_xlabel("batch size")
-    ax.set_ylabel("throughput-optimal lookahead γ*")
+    ax.set_ylabel("TPOT-optimal lookahead γ*")
     ax.set_title("Load-aware lookahead: γ* shrinks as batch grows")
     ax.legend()
     save(fig, "p5_load_aware_gamma")
@@ -365,7 +368,7 @@ def batch():
         axb.plot(s.batch, s.speedup, "o-", label=setting)
     axb.axhline(1, color="k", lw=1, ls="--")
     axb.set_xscale("log", base=2); axb.set_xlabel("batch size")
-    axb.set_ylabel("spec speedup"); axb.set_title("DRAM bandwidth shifts B* (γ=4, α=0.8)")
+    axb.set_ylabel("TPOT speedup"); axb.set_title("DRAM bandwidth shifts B* (γ=4, α=0.8)")
     axb.legend(fontsize=8)
     ratio = df[(df.study == "batch_ratio") & (df.method == "spec")]
     for setting, s in ratio.groupby("setting"):
@@ -373,7 +376,7 @@ def batch():
         axr.plot(s.batch, s.speedup, "o-", label=setting)
     axr.axhline(1, color="k", lw=1, ls="--")
     axr.set_xscale("log", base=2); axr.set_xlabel("batch size")
-    axr.set_ylabel("spec speedup"); axr.set_title("Draft/target ratio shifts B* (γ=4, α=0.8)")
+    axr.set_ylabel("TPOT speedup"); axr.set_title("Draft/target ratio shifts B* (γ=4, α=0.8)")
     axr.legend(fontsize=8)
     save(fig, "p5_breakeven_hardware")
 

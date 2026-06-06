@@ -10,8 +10,9 @@ via podman; the login node is not used for compute.
 - `run_scheduler.py` — P1, optimal scheduler (ctx × γ × α on `arch_kv_buffer`).
 - `run_generality.py` — P2, precision / model-scale / memory-hierarchy.
 - `run_kv_dataflow.py`, `run_kv_longctx.py` — P3, KV organizations + verify dataflow (to 32k).
-- `run_eagle.py` — EAGLE-3 (depth-aware: 1-layer draft + tree verify; yield from a
-  calibrated acceptance length τ, paper-grounded τ≈6).
+- `run_eagle.py` — EAGLE-3 (depth-aware: 1-layer draft + explicit full-binary tree
+  layers with same-layer dedupe + tree verify; yield from a calibrated acceptance length
+  τ, paper-grounded τ≈6).
 - `run_batch.py` — batch sweep: TPOT/throughput, speculative break-even batch B*,
   load-aware lookahead γ*(α,B), and B* vs draft/target ratio and DRAM bandwidth.
 - `run_arch_throughput.py` — memory-layout configs + DRAM-bandwidth roofline for throughput.

@@ -197,6 +197,58 @@ def eagle_draft_pass(arch, ctx, frontier, *, target=TARGET_MODEL, bits=8, extra=
     return _map(arch, target, ctx, max(1, frontier), 1, bits, False, extra)
 
 
+def eagle_power2_layer_counts(depth):
+    """Full binary tree frontier sizes: 1, 2, 4, ... for `depth` draft passes."""
+    if depth < 1:
+        raise ValueError("EAGLE tree depth must be >= 1")
+    return tuple(1 << i for i in range(depth))
+
+
+def eagle_unique_layer_counts(tree_layers):
+    """Return the per-layer unique candidate counts used by the EAGLE model.
+
+    Each layer can be either:
+      * an integer count, when only the effective unique frontier size is known; or
+      * an iterable of hashable candidate IDs, which is deduplicated within that layer.
+
+    Candidate IDs should encode the full path/prefix when same-token children under
+    different parents must remain distinct.
+    """
+    counts = []
+    for i, layer in enumerate(tree_layers):
+        if isinstance(layer, int):
+            count = layer
+        elif isinstance(layer, (str, bytes)):
+            raise TypeError("EAGLE tree layers must not be bare strings")
+        else:
+            count = len(set(layer))
+        if count < 1:
+            raise ValueError(f"EAGLE tree layer {i} must have at least one unique node")
+        counts.append(count)
+    if not counts:
+        raise ValueError("EAGLE tree must contain at least one layer")
+    return tuple(counts)
+
+
+def eagle_tree_config_name(tree_layers):
+    counts = eagle_unique_layer_counts(tree_layers)
+    return f"tree_d{len(counts)}_n{sum(counts)}"
+
+
+def _normalize_eagle_tree(tree_layers, tree_nodes=None):
+    if isinstance(tree_layers, int):
+        counts = eagle_power2_layer_counts(tree_layers)
+    else:
+        counts = eagle_unique_layer_counts(tree_layers)
+    unique_nodes = sum(counts)
+    if tree_nodes is not None and tree_nodes != unique_nodes:
+        raise ValueError(
+            "EAGLE tree_nodes is now derived from explicit layer counts; "
+            f"got tree_nodes={tree_nodes}, but unique layer counts sum to {unique_nodes}"
+        )
+    return counts
+
+
 def expected_tokens_tree(depth, width, alpha):
     """OPTIMISTIC reference only (independent-candidate assumption): with `width`
     candidates per level, per-level accept p = 1-(1-alpha)**width saturates to ~1, badly
@@ -211,29 +263,40 @@ def expected_tokens_tree(depth, width, alpha):
     return 1 + p * (1 - p ** depth) / (1 - p)
 
 
-def eagle_round_cost(arch, ctx, depth, tree_nodes, *, target=TARGET_MODEL, bits=8,
+def eagle_round_cost(arch, ctx, tree_layers, tree_nodes=None, *, target=TARGET_MODEL, bits=8,
                      target_layers=1, extra=()):
-    """`depth` single-layer draft passes (frontier ~ tree_nodes/depth each) + one
-    full-target tree verification of `tree_nodes` candidates."""
-    frontier = max(1, round(tree_nodes / depth))
+    """Single-layer draft passes over explicit tree layers + one full-target verify.
+
+    `tree_layers` may be an integer depth, in which case the model uses full-binary
+    layer counts (1, 2, 4, ...), or an explicit sequence of per-layer counts / node IDs.
+    Node IDs are deduplicated within each draft pass to avoid charging duplicate same-layer
+    candidates twice.
+    """
+    layer_counts = _normalize_eagle_tree(tree_layers, tree_nodes)
+    unique_nodes = sum(layer_counts)
     e = l = 0.0
-    for i in range(depth):
+    for i, frontier in enumerate(layer_counts):
         de, dl = eagle_draft_pass(arch, ctx + i, frontier, target=target, bits=bits,
                                   extra=extra)
         e += de  # one layer, not the full target stack
         l += dl
-    ve, vl = verify_step(arch, ctx, tree_nodes, model=target, bits=bits, extra=extra)
+    ve, vl = verify_step(arch, ctx, unique_nodes, model=target, bits=bits, extra=extra)
     e += ve * target_layers
     l += vl * target_layers
     return e, l
 
 
-def eagle_per_token(arch, ctx, depth, tree_nodes, tau, *, target=TARGET_MODEL, bits=8,
+def eagle_per_token(arch, ctx, tree_layers, tree_nodes_or_tau, tau=None, *, target=TARGET_MODEL, bits=8,
                     target_layers=1, extra=()):
     """Per-token cost using a CALIBRATED average acceptance length tau (tokens accepted
     per drafting-verification round), rather than deriving it from a flawed independence
     model. EAGLE-3 reports tau ~ 5.8-6.6 (paper Table 1)."""
-    e, l = eagle_round_cost(arch, ctx, depth, tree_nodes, target=target, bits=bits,
+    if tau is None:
+        tree_nodes = None
+        tau = tree_nodes_or_tau
+    else:
+        tree_nodes = tree_nodes_or_tau
+    e, l = eagle_round_cost(arch, ctx, tree_layers, tree_nodes, target=target, bits=bits,
                             target_layers=target_layers, extra=extra)
     return e / tau, l / tau
 

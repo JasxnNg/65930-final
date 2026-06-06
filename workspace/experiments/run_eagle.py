@@ -17,8 +17,10 @@ ARCH = "kv_buffer"
 CTXS = [512, 1024, 2048, 4096]
 ALPHAS = sd.ALPHAS_DEFAULT
 GAMMAS = [1, 2, 4, 6, 8, 10, 12]
-# representative EAGLE-2/3 dynamic trees: (depth, total tree nodes)
-TREES = {"tree_d6_n25": (6, 25), "tree_d7_n48": (7, 48), "tree_d8_n60": (8, 60)}
+# Full-binary EAGLE trees: explicit per-layer frontiers (1, 2, 4, 8, ...).
+# The model deduplicates explicit node IDs within each layer if a caller supplies them.
+TREE_LAYERS = [sd.eagle_power2_layer_counts(d) for d in (5, 6, 7)]
+TREES = {sd.eagle_tree_config_name(layers): layers for layers in TREE_LAYERS}
 TAUS = [4, 5, 6, 7]            # paper-reported acceptance-length range
 OUT = "results/eagle.csv"
 
@@ -29,6 +31,7 @@ LT = sd.MODELS[TARGET]["n_layers"]
 
 def make_rows(ctx):
     rows = []
+    print(f"[eagle] ctx={ctx} baseline", flush=True)
     be, bl = sd.baseline_step(ARCH, ctx, model=TARGET)
     be, bl = be * LT, bl * LT
     base = {"experiment": "eagle", "arch": ARCH, "ctx": ctx, "Ld": LD, "Lt": LT}
@@ -40,6 +43,7 @@ def make_rows(ctx):
 
     # vanilla speculative: yield (tau) derived from (gamma, alpha)
     for g in GAMMAS:
+        print(f"[eagle] ctx={ctx} vanilla g={g}", flush=True)
         re, rl = sd.spec_round_cost(ARCH, ctx, g, draft=DRAFT, target=TARGET,
                                     draft_layers=LD, target_layers=LT)
         for a in ALPHAS:
@@ -49,14 +53,18 @@ def make_rows(ctx):
                          "tau": tau, "L_per_tok": sl, "E_per_tok": se,
                          "latency_speedup": bl / sl, "energy_ratio": se / be})
 
-    # EAGLE-3: single-layer draft + tree verify, calibrated tau
-    for name, (depth, nodes) in TREES.items():
-        re, rl = sd.eagle_round_cost(ARCH, ctx, depth, nodes, target=TARGET,
+    # EAGLE-3: single-layer draft + explicit tree verify, calibrated tau
+    for name, layer_counts in TREES.items():
+        print(f"[eagle] ctx={ctx} {name}", flush=True)
+        depth = len(layer_counts)
+        nodes = sum(layer_counts)
+        re, rl = sd.eagle_round_cost(ARCH, ctx, layer_counts, target=TARGET,
                                      target_layers=LT)
         for tau in TAUS:
             sl, se = rl / tau, re / tau
             rows.append({**base, "method": "eagle", "config": name, "tau": float(tau),
                          "tree_depth": depth, "tree_nodes": nodes,
+                         "tree_layer_counts": " ".join(map(str, layer_counts)),
                          "L_per_tok": sl, "E_per_tok": se,
                          "latency_speedup": bl / sl, "energy_ratio": se / be})
     return rows

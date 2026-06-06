@@ -199,7 +199,7 @@ draft micro-modeling — which is exactly why calibrating τ was the change that
 
 ---
 
-## G. Batch size, throughput, and the speculative break-even
+## G. Batch size, TPOT, and the speculative break-even
 
 Decode serving runs many requests in one batch, which changes the picture entirely: the
 target *weights* are read once and amortized across the batch, while KV and compute grow
@@ -210,7 +210,8 @@ per-step latency, so "minimize TPOT" and "maximize tokens/s" give the *same* ans
 
 **The model reproduces the memory→compute transition.** Baseline TPOT is flat at small B
 (3.0 ms at B=1–4: weight-bound) and rises steeply at large B (24 ms at B=256:
-compute-bound); throughput rises then saturates at a compute roof (Fig.
+compute-bound); speculative TPOT follows the same transition while staying below the
+baseline curve for this draft/target pair (Fig.
 `p5_batch_breakeven`).
 
 **Speculation's benefit decays with batch — a break-even batch B\*.** At small batch
@@ -224,14 +225,14 @@ the GPUs cannot.
 
 **B\* is set by the draft/target ratio, not a universal number** (Fig.
 `p5_breakeven_hardware`). With a modest draft/target gap (6.7B→30B) the speedup crosses
-1.0× at **B\*≈256–512**: above it, speculation *hurts* throughput. With a large gap
+1.0× at **B\*≈256–512**: above it, speculation *hurts* TPOT/throughput. With a large gap
 (6.7B→175B, the draft ≈26× cheaper) the speedup never breaks even in our range — it
 plateaus at ≈1.33× even at the compute roof. So **a sufficiently cheap draft keeps
 speculation beneficial at every batch size**; choosing the draft governs not just the
 peak speedup (Section C) but whether a break-even exists at all.
 
 **Load-aware lookahead: γ\* shrinks as batch grows** (Fig. `p5_load_aware_gamma`). Because
-larger γ wastes more compute when the accelerator is loaded, the throughput-optimal
+larger γ wastes more compute when the accelerator is loaded, the TPOT-optimal
 lookahead falls with batch — e.g., at α=0.8, γ\*=4 at B≤64 but γ\*=2 by B=128; at α=0.9,
 γ\*=8 collapses to 4 by B≈32. Combined with the acceptance-dependence of Section B, the
 optimal lookahead is a **two-variable function γ\*(α, B)** of acceptance *and* load — a
@@ -345,8 +346,8 @@ Each is a natural extension of the released `experiments/` harness.
 | `p3_kv_longctx` | D | KV organization to 32k context (energy diverges) |
 | `p4_eagle_vs_vanilla` | E | Per-token latency & energy: baseline / vanilla / EAGLE (τ=6) |
 | `p4_eagle_speedup_vs_tau` | E | Speedup vs achieved acceptance length τ; paper τ/speedup bands |
-| `p5_batch_breakeven` | G | Throughput saturation + speedup decay vs batch (break-even) |
-| `p5_load_aware_gamma` | G | Throughput-optimal γ\*(α, B): γ\* shrinks with batch |
+| `p5_batch_breakeven` | G | TPOT growth + speedup decay vs batch (break-even) |
+| `p5_load_aware_gamma` | G | TPOT-optimal γ\*(α, B): γ\* shrinks with batch |
 | `p5_breakeven_hardware` | G | Break-even batch vs DRAM bandwidth and draft/target ratio |
 | `p6_arch_named` | H | Throughput (and energy) across memory-layout configurations |
 | `p6_dram_roofline` | H | Throughput roofline + speedup vs batch across DRAM bandwidths |
